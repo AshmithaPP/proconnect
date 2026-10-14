@@ -18,7 +18,7 @@ export function getPaymentMode() {
 
 export function getWorldlineConfig() {
   return {
-    baseUrl: process.env.WORLDLINE_BASE_URL || 'https://payment.preprod.connect.worldline-solutions.com',
+    baseUrl: process.env.WORLDLINE_BASE_URL || 'https://api.preprod.connect.worldline-solutions.com',
     merchantId: process.env.WORLDLINE_MERCHANT_ID || '9000000514',
     apiKeyId: process.env.WORLDLINE_API_KEY_ID || '',
     secretApiKey: process.env.WORLDLINE_SECRET_API_KEY || '',
