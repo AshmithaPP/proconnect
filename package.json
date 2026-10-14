@@ -14,7 +14,8 @@
     "test:bookings": "node tests/e2e/bookings.test.js",
     "test:worldline": "node tests/e2e/worldline-flow.test.js",
     "test:e2e": "npm run test:auth && npm run test:bookings && npm run test:worldline && npm run test:payment-flow",
-    "test:payment-flow": "node tests/e2e/payment-flow.test.js"
+    "test:payment-flow": "node tests/e2e/payment-flow.test.js",
+    "worldline:check": "node tools/check-worldline.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
