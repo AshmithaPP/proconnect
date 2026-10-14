@@ -112,6 +112,8 @@ async function run() {
     const data = await res.json();
     assert(res.status === 200 && data.bookings.some((b) => b.bookingId === bookingId),
       'Paid booking appears in admin bookings API', data);
+    assert(data.bookings.every((b) => b.status === 'paid'),
+      'Admin bookings API returns only paid bookings', data.bookings.map((b) => b.status));
   }
 
   {

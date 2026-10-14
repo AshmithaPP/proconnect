@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { requireAdmin } from '@/features/auth/require-admin';
-import { listBookings, getBookingStats } from '@/features/booking/booking.repository';
+import { listPaidBookings, getPaidBookingStats } from '@/features/booking/booking.repository';
 import { formatAmount } from '@/features/payments/format-amount';
 
 export const dynamic = 'force-dynamic';
@@ -29,19 +29,8 @@ function withOther(value, otherValue) {
   return value === 'Other' && otherValue ? `Other (${otherValue})` : value || '—';
 }
 
-const STATUS_META = {
-  paid: { label: 'Paid', className: 'status-paid' },
-  pending: { label: 'Awaiting payment', className: 'status-pending' },
-  cancelled: { label: 'Cancelled', className: 'status-cancelled' },
-  no_payment: { label: 'No payment record', className: 'status-missing' },
-};
-
-function dashboardHref(status, page = 1) {
-  const params = new URLSearchParams();
-  if (status !== 'all') params.set('status', status);
-  if (page > 1) params.set('page', String(page));
-  const qs = params.toString();
-  return qs ? `/admin/dashboard?${qs}` : '/admin/dashboard';
+function dashboardHref(page = 1) {
+  return page > 1 ? `/admin/dashboard?page=${page}` : '/admin/dashboard';
 }
 
 export default async function AdminDashboardPage({ searchParams }) {
@@ -49,20 +38,10 @@ export default async function AdminDashboardPage({ searchParams }) {
   const resolvedSearchParams = await searchParams;
   const currentPage = Math.max(Number(resolvedSearchParams?.page) || 1, 1);
 
-  const [{ bookings, totalCount, status: activeStatus }, stats] = await Promise.all([
-    listBookings({ status: resolvedSearchParams?.status || 'all', page: currentPage, pageSize: PAGE_SIZE }),
-    getBookingStats(),
+  const [{ bookings, totalCount }, stats] = await Promise.all([
+    listPaidBookings({ page: currentPage, pageSize: PAGE_SIZE }),
+    getPaidBookingStats(),
   ]);
-
-  const filterTabs = [
-    { status: 'all', label: 'All', count: stats.totalBookingCount },
-    { status: 'paid', label: 'Paid', count: stats.paidBookingCount },
-    { status: 'pending', label: 'Awaiting payment', count: stats.pendingPaymentCount },
-    { status: 'cancelled', label: 'Cancelled', count: stats.cancelledCount },
-    ...(stats.noPaymentCount > 0
-      ? [{ status: 'no_payment', label: 'No payment record', count: stats.noPaymentCount }]
-      : []),
-  ];
 
   const totalPages = Math.max(Math.ceil(totalCount / PAGE_SIZE), 1);
 
@@ -83,7 +62,7 @@ export default async function AdminDashboardPage({ searchParams }) {
             Welcome back, <span className="highlight-text">{admin.fullName}</span>
           </h1>
           <p className="dashboard-sub-heading">
-            Every consultation booking from the website with its payment status, newest first.
+            Consultations that are successfully paid and booked, most recently paid first.
           </p>
         </div>
       </div>
@@ -119,37 +98,24 @@ export default async function AdminDashboardPage({ searchParams }) {
 
         <div className="admin-info-card">
           <div className="card-top-row">
-            <span className="card-label">Awaiting Payment</span>
-            <span className="card-pill-tag">Pending</span>
+            <span className="card-label">Paid This Month</span>
+            <span className="card-pill-tag">Month</span>
           </div>
-          <div className="card-val">{stats.pendingPaymentCount}</div>
-          <div className="card-subtext">Submitted, not yet paid</div>
+          <div className="card-val">{stats.paidThisMonthCount}</div>
+          <div className="card-subtext">Since the 1st</div>
         </div>
       </div>
 
       {/* Paid Bookings Table */}
       <div className="admin-table-card">
         <div className="admin-table-head">
-          <h2 className="admin-table-title">Consultation Bookings</h2>
-          <span className="card-pill-tag">{totalCount} total</span>
+          <h2 className="admin-table-title">Paid Consultation Bookings</h2>
+          <span className="card-pill-tag">{totalCount} paid</span>
         </div>
-
-        <nav className="admin-filter-tabs" aria-label="Filter bookings by status">
-          {filterTabs.map((tab) => (
-            <Link
-              key={tab.status}
-              href={dashboardHref(tab.status)}
-              className={`admin-filter-tab ${activeStatus === tab.status ? 'active' : ''}`}
-            >
-              {tab.label}
-              <span className="admin-filter-count">{tab.count}</span>
-            </Link>
-          ))}
-        </nav>
 
         {bookings.length === 0 ? (
           <div className="admin-table-empty">
-            No bookings in this view yet.
+            No paid bookings yet.
           </div>
         ) : (
           <div className="admin-table-scroll">
@@ -165,7 +131,6 @@ export default async function AdminDashboardPage({ searchParams }) {
                   <th>Sales Challenge</th>
                   <th>Preferred Slot</th>
                   <th>Amount</th>
-                  <th>Status</th>
                   <th>Booking ID</th>
                 </tr>
               </thead>
@@ -199,11 +164,6 @@ export default async function AdminDashboardPage({ searchParams }) {
                         ? formatAmount(booking.payment.amountPaise, booking.payment.currencyCode)
                         : '—'}
                     </td>
-                    <td className="cell-nowrap">
-                      <span className={`status-badge ${STATUS_META[booking.status].className}`}>
-                        {STATUS_META[booking.status].label}
-                      </span>
-                    </td>
                     <td className="cell-mono" title={booking.bookingId}>
                       {booking.bookingId.slice(0, 8)}
                     </td>
@@ -217,7 +177,7 @@ export default async function AdminDashboardPage({ searchParams }) {
         {totalPages > 1 && (
           <div className="admin-table-pagination">
             {currentPage > 1 ? (
-              <Link href={dashboardHref(activeStatus, currentPage - 1)}>← Previous</Link>
+              <Link href={dashboardHref(currentPage - 1)}>← Previous</Link>
             ) : (
               <span />
             )}
@@ -225,7 +185,7 @@ export default async function AdminDashboardPage({ searchParams }) {
               Page {currentPage} of {totalPages}
             </span>
             {currentPage < totalPages ? (
-              <Link href={dashboardHref(activeStatus, currentPage + 1)}>Next →</Link>
+              <Link href={dashboardHref(currentPage + 1)}>Next →</Link>
             ) : (
               <span />
             )}

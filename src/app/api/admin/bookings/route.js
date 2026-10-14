@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { verifyAdminApiSession } from '@/features/auth/api-guard';
-import { listBookings, getBookingStats } from '@/features/booking/booking.repository';
+import { listPaidBookings, getPaidBookingStats } from '@/features/booking/booking.repository';
 
 const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
 /**
- * GET /api/admin/bookings?status=all|paid|pending|cancelled|no_payment&page=1&pageSize=20
- * Admin-only: every booking with its latest payment and derived `status`, plus KPI stats.
- * `status` defaults to "all".
+ * GET /api/admin/bookings?page=1&pageSize=20
+ * Admin-only: successfully paid & confirmed bookings (most recently paid first), plus KPI stats.
  */
 export async function GET(request) {
   const auth = await verifyAdminApiSession();
@@ -16,18 +15,17 @@ export async function GET(request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const status = searchParams.get('status') || 'all';
   const page = Number(searchParams.get('page')) || 1;
   const pageSize = Number(searchParams.get('pageSize')) || 20;
 
   try {
     const [list, stats] = await Promise.all([
-      listBookings({ status, page, pageSize }),
-      getBookingStats(),
+      listPaidBookings({ page, pageSize }),
+      getPaidBookingStats(),
     ]);
 
     return NextResponse.json(
-      { bookings: list.bookings, totalCount: list.totalCount, status: list.status, page, pageSize, stats },
+      { bookings: list.bookings, totalCount: list.totalCount, page, pageSize, stats },
       { status: 200, headers: NO_STORE }
     );
   } catch (err) {

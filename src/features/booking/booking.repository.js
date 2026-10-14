@@ -277,81 +277,62 @@ const BOOKING_COLUMNS = `
   p.payment_id, p.payment_provider, p.provider_order_id, p.provider_payment_id,
   p.amount_paise, p.currency_code, p.payment_status, p.paid_at`;
 
-export const BOOKING_STATUS_FILTERS = ['all', 'paid', 'pending', 'cancelled', 'no_payment'];
-
-/** SQL WHERE clause per status filter — mirrors deriveBookingStatus(). */
-const STATUS_FILTER_SQL = {
-  all: '1 = 1',
-  paid: `p.payment_status = 'paid'`,
-  pending: `p.payment_id IS NOT NULL AND p.payment_status = 'pending' AND b.booking_status <> 'cancelled'`,
-  cancelled: `p.payment_id IS NOT NULL AND p.payment_status <> 'paid'
-              AND (b.booking_status = 'cancelled' OR p.payment_status = 'failed')`,
-  no_payment: 'p.payment_id IS NULL',
-};
+/** A booking counts only once it is confirmed AND its latest payment is paid. */
+const PAID_BOOKING_SQL = `p.payment_status = 'paid' AND b.booking_status = 'confirmed'`;
 
 /**
- * List bookings with their latest payment, newest first (paid filter: most recently paid first).
+ * List successfully paid & confirmed bookings, most recently paid first.
  * @param {Object} params
- * @param {'all'|'paid'|'pending'|'cancelled'|'no_payment'} [params.status]
  * @param {number} [params.page] - 1-based
  * @param {number} [params.pageSize]
- * @returns {Promise<{ bookings: object[], totalCount: number, status: string }>}
+ * @returns {Promise<{ bookings: object[], totalCount: number }>}
  */
-export async function listBookings({ status = 'all', page = 1, pageSize = 20 } = {}) {
-  const safeStatus = BOOKING_STATUS_FILTERS.includes(status) ? status : 'all';
+export async function listPaidBookings({ page = 1, pageSize = 20 } = {}) {
   const safePageSize = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
   const safePage = Math.max(Number(page) || 1, 1);
   const offset = (safePage - 1) * safePageSize;
-  const where = STATUS_FILTER_SQL[safeStatus];
-  const orderBy = safeStatus === 'paid' ? 'p.paid_at DESC' : 'b.created_at DESC';
 
   // LIMIT/OFFSET are inlined as validated integers; mysql2 prepared statements reject them as params
   const rows = await query(
     `SELECT ${BOOKING_COLUMNS}
      ${BOOKING_WITH_LATEST_PAYMENT}
-     WHERE ${where}
-     ORDER BY ${orderBy}
+     WHERE ${PAID_BOOKING_SQL}
+     ORDER BY p.paid_at DESC
      LIMIT ${safePageSize} OFFSET ${offset}`
   );
 
   const countRows = await query(
-    `SELECT COUNT(*) AS total_count ${BOOKING_WITH_LATEST_PAYMENT} WHERE ${where}`
+    `SELECT COUNT(*) AS total_count ${BOOKING_WITH_LATEST_PAYMENT} WHERE ${PAID_BOOKING_SQL}`
   );
 
   return {
     bookings: rows.map(mapBookingRow),
     totalCount: Number(countRows[0].total_count),
-    status: safeStatus,
   };
 }
 
 /**
- * Aggregate booking KPIs for the admin dashboard (one row per booking, latest payment).
- * @returns {Promise<{ totalBookingCount: number, paidBookingCount: number, paidTodayCount: number,
- *   totalRevenuePaise: number, pendingPaymentCount: number, cancelledCount: number, noPaymentCount: number }>}
+ * KPIs for the admin dashboard, over paid & confirmed bookings only.
+ * @returns {Promise<{ paidBookingCount: number, paidTodayCount: number,
+ *   paidThisMonthCount: number, totalRevenuePaise: number }>}
  */
-export async function getBookingStats() {
+export async function getPaidBookingStats() {
   const rows = await query(
     `SELECT
-       COUNT(*) AS total_booking_count,
-       COALESCE(SUM(${STATUS_FILTER_SQL.paid}), 0) AS paid_booking_count,
-       COALESCE(SUM(${STATUS_FILTER_SQL.paid} AND p.paid_at >= CURDATE()), 0) AS paid_today_count,
-       COALESCE(SUM(CASE WHEN ${STATUS_FILTER_SQL.paid} THEN p.amount_paise ELSE 0 END), 0) AS total_revenue_paise,
-       COALESCE(SUM(${STATUS_FILTER_SQL.pending}), 0) AS pending_payment_count,
-       COALESCE(SUM(${STATUS_FILTER_SQL.cancelled}), 0) AS cancelled_count,
-       COALESCE(SUM(${STATUS_FILTER_SQL.no_payment}), 0) AS no_payment_count
-     ${BOOKING_WITH_LATEST_PAYMENT}`
+       COUNT(*) AS paid_booking_count,
+       COALESCE(SUM(p.paid_at >= CURDATE()), 0) AS paid_today_count,
+       COALESCE(SUM(p.paid_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')), 0) AS paid_this_month_count,
+       COALESCE(SUM(p.amount_paise), 0) AS total_revenue_paise
+     ${BOOKING_WITH_LATEST_PAYMENT}
+     WHERE ${PAID_BOOKING_SQL}`
   );
 
   const row = rows[0];
   return {
-    totalBookingCount: Number(row.total_booking_count),
     paidBookingCount: Number(row.paid_booking_count),
     paidTodayCount: Number(row.paid_today_count),
+    paidThisMonthCount: Number(row.paid_this_month_count),
     totalRevenuePaise: Number(row.total_revenue_paise),
-    pendingPaymentCount: Number(row.pending_payment_count),
-    cancelledCount: Number(row.cancelled_count),
-    noPaymentCount: Number(row.no_payment_count),
   };
 }
 
