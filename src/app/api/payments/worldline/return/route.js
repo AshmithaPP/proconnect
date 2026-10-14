@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getAppBaseUrl } from '@/lib/http/app-url';
 import {
   getBookingByProviderOrderId,
   markBookingPaymentSucceeded,
@@ -28,7 +29,7 @@ export async function GET(request) {
   const hostedCheckoutId = searchParams.get('hostedCheckoutId');
   const simulatedAction = searchParams.get('action'); // Simulator only (WORLDLINE_ENV=mock)
 
-  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const appBaseUrl = getAppBaseUrl(request);
   const statusUrl = (params) => `${appBaseUrl}/payment-status?${new URLSearchParams(params).toString()}`;
 
   if (!hostedCheckoutId) {
