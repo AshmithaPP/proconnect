@@ -39,6 +39,26 @@ export default function useBookingForm(onSuccess) {
 
   useEffect(() => {
     loadUnavailableSlots();
+
+    // Re-sync whenever the customer comes back to this page — e.g. after cancelling on the
+    // payment page — so the picker always reflects the backend (only paid slots are taken).
+    const handlePageShow = (event) => {
+      if (event.persisted) {
+        // Restored from the browser back/forward cache: clear the stale "submitting" state
+        setIsSubmitting(false);
+      }
+      loadUnavailableSlots();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadUnavailableSlots();
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const handleChange = (e) => {
@@ -111,6 +131,12 @@ export default function useBookingForm(onSuccess) {
         if (!checkoutRes.ok || !checkoutData.redirectUrl) {
           setErrorMessage(checkoutData.error || 'Could not initialize Worldline payment. Please try again.');
           setIsSubmitting(false);
+
+          // Slot was paid for by someone else meanwhile: refresh availability and reset field
+          if (checkoutRes.status === 409) {
+            loadUnavailableSlots();
+            setFormData((prev) => ({ ...prev, timeSlot: '' }));
+          }
           return;
         }
 

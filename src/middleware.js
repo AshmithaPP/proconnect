@@ -6,7 +6,7 @@ import { getSessionCookieName } from '@/features/auth/cookie';
  *
  * Only checks that a session cookie is present, so logged-out visitors are
  * redirected before any server rendering happens. It does NOT validate the
- * session — the database check in admin/(protected)/layout.jsx (requireAdmin)
+ * session — the database check in admin/dashboard/layout.jsx (requireAdmin)
  * and in each admin API route (verifyAdminApiSession) remains authoritative.
  */
 export function middleware(request) {

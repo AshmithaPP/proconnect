@@ -24,21 +24,50 @@ async function withTransaction(work) {
 }
 
 /**
- * Retrieve list of time slots that are currently booked today.
- * STRICT RULE: Only confirmed (paid) bookings mark a slot as unavailable.
- * Cancelled, pending, or failed attempts NEVER cut off or block the slot.
- * 
+ * SINGLE SOURCE OF TRUTH for slot occupancy.
+ * A slot is taken today only when a booking for it is `confirmed` AND has a `paid`
+ * payment. Pending, cancelled, and failed attempts never block a slot.
+ * Expects the booking table aliased as `b`.
+ */
+const PAID_SLOT_CONDITION = `
+  DATE(b.created_at) = CURDATE()
+  AND b.booking_status = 'confirmed'
+  AND EXISTS (
+    SELECT 1 FROM booking_payments paid
+    WHERE paid.booking_id = b.booking_id AND paid.payment_status = 'paid'
+  )`;
+
+/**
+ * Time slots already taken today by paid bookings.
  * @returns {Promise<string[]>} Array of unavailable slot strings
  */
 export async function getUnavailableTimeSlots() {
   const rows = await query(
-    `SELECT DISTINCT preferred_time_slot
-     FROM consultation_bookings
-     WHERE DATE(created_at) = CURDATE()
-       AND booking_status = 'confirmed'`
+    `SELECT DISTINCT b.preferred_time_slot
+     FROM consultation_bookings b
+     WHERE ${PAID_SLOT_CONDITION}`
   );
 
   return rows.map((r) => r.preferred_time_slot);
+}
+
+/**
+ * Whether a slot is already taken today by a paid booking other than `excludeBookingId`.
+ * @param {string} timeSlot
+ * @param {string} [excludeBookingId]
+ * @param {import('mysql2/promise').PoolConnection} [conn] - pass to run inside a transaction (locks matching rows)
+ * @returns {Promise<boolean>}
+ */
+export async function isSlotTakenByPaidBooking(timeSlot, excludeBookingId = null, conn = null) {
+  const sql = `SELECT b.booking_id
+     FROM consultation_bookings b
+     WHERE b.preferred_time_slot = ?
+       AND b.booking_id <> ?
+       AND ${PAID_SLOT_CONDITION}
+     LIMIT 1${conn ? ' FOR UPDATE' : ''}`;
+  const params = [timeSlot, excludeBookingId || ''];
+  const rows = conn ? (await conn.execute(sql, params))[0] : await query(sql, params);
+  return rows.length > 0;
 }
 
 /**
@@ -48,24 +77,25 @@ export async function getUnavailableTimeSlots() {
  */
 export async function markBookingCancelled(bookingId) {
   if (!bookingId) return;
-  await query(
-    `UPDATE consultation_bookings
-     SET booking_status = 'cancelled'
-     WHERE booking_id = ? AND booking_status = 'pending_payment'`,
-    [bookingId]
-  );
-  await query(
-    `UPDATE booking_payments
-     SET payment_status = 'failed'
-     WHERE booking_id = ? AND payment_status = 'pending'`,
-    [bookingId]
-  );
+  await withTransaction(async (conn) => {
+    await conn.execute(
+      `UPDATE consultation_bookings
+       SET booking_status = 'cancelled'
+       WHERE booking_id = ? AND booking_status = 'pending_payment'`,
+      [bookingId]
+    );
+    await conn.execute(
+      `UPDATE booking_payments
+       SET payment_status = 'failed'
+       WHERE booking_id = ? AND payment_status = 'pending'`,
+      [bookingId]
+    );
+  });
 }
 
 /**
  * Create a booking together with its pending payment record (atomic).
- * Enforces strict backend validation with row-level locking (FOR UPDATE)
- * to guarantee that a slot cannot be double-booked if already paid/confirmed.
+ * Rejects slots already taken by a paid booking (see PAID_SLOT_CONDITION).
  * 
  * @param {Object} params
  * @param {Object} params.booking - normalized output of validateBookingInput()
@@ -78,26 +108,13 @@ export async function createBookingWithPendingPayment({ booking, amountPaise, cu
   const paymentId = crypto.randomUUID();
 
   await withTransaction(async (conn) => {
-    // 1. Strict concurrency lock: Only paid/confirmed bookings block a slot
-    const [existing] = await conn.execute(
-      `SELECT booking_id, full_name, booking_status, created_at
-       FROM consultation_bookings
-       WHERE preferred_time_slot = ?
-         AND DATE(created_at) = CURDATE()
-         AND booking_status = 'confirmed'
-       LIMIT 1
-       FOR UPDATE`,
-      [booking.preferredTimeSlot]
-    );
-
-    if (existing.length > 0) {
-      const conflict = existing[0];
+    // 1. Reject if the slot is already taken by a paid booking (locks matching rows)
+    if (await isSlotTakenByPaidBooking(booking.preferredTimeSlot, null, conn)) {
       const err = new Error(
         `The time slot "${booking.preferredTimeSlot}" is already booked.`
       );
       err.code = 'SLOT_ALREADY_BOOKED';
       err.timeSlot = booking.preferredTimeSlot;
-      err.bookingStatus = conflict.booking_status;
       throw err;
     }
 

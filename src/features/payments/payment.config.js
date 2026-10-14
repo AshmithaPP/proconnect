@@ -26,6 +26,14 @@ export function getWorldlineConfig() {
   };
 }
 
+/**
+ * True only when WORLDLINE_ENV=mock. This is the ONLY switch that enables the
+ * in-app checkout simulator and trust in MOCK_WL_ session IDs.
+ */
+export function isMockGatewayEnabled() {
+  return getWorldlineConfig().env === 'mock';
+}
+
 export function getConsultationFee() {
   const amountPaise = Number(process.env.CONSULTATION_FEE_PAISE);
   return {

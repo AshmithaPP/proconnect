@@ -10,11 +10,11 @@ import 'server-only';
  *  2. Calling the official "Create Hosted Checkout" endpoint (POST /v1/{merchantId}/hostedCheckouts).
  *  3. Calling the official "Get Hosted Checkout" endpoint (GET /v1/{merchantId}/hostedCheckouts/{hostedCheckoutId})
  *     to perform Dual Verification.
- *  4. Providing a built-in Mock Simulator fallback for offline testing or during sandbox onboarding.
+ *  4. Providing a built-in Mock Simulator, enabled ONLY when WORLDLINE_ENV=mock.
  */
 
 import connectSdk from 'connect-sdk-nodejs';
-import { getWorldlineConfig } from '@/features/payments/payment.config';
+import { getWorldlineConfig, isMockGatewayEnabled } from '@/features/payments/payment.config';
 
 // Singleton instance to prevent re-initializing the SDK on every API request
 let sdkClientInstance = null;
@@ -119,8 +119,8 @@ export async function createHostedCheckoutSession({
     },
   };
 
-  // If environment is explicitly set to mock, return our local simulator directly
-  if (config.env === 'mock') {
+  // Simulator is used only when explicitly enabled (WORLDLINE_ENV=mock) — never as a fallback
+  if (isMockGatewayEnabled()) {
     return createMockHostedCheckoutSession({ bookingId, amountPaise, currencyCode, customer, returnUrl });
   }
 
@@ -133,15 +133,7 @@ export async function createHostedCheckoutSession({
     // If Worldline rejected the merchant authorization or returned non-200
     if (!response || response.isSuccess === false || !response.hostedCheckoutId) {
       const errMsg = response?.body?.errors?.[0]?.message || `HTTP ${response?.status || 403}`;
-      console.warn('[Worldline] Pre-production response not authorized:', errMsg);
-      return createMockHostedCheckoutSession({
-        bookingId,
-        amountPaise,
-        currencyCode,
-        customer,
-        returnUrl,
-        apiNotice: errMsg,
-      });
+      throw new Error(`Worldline rejected hosted checkout creation: ${errMsg}`);
     }
 
     // Worldline returns:
@@ -163,19 +155,11 @@ export async function createHostedCheckoutSession({
       isMock: false,
     };
   } catch (error) {
-    console.warn('[Worldline] Pre-production API call notification:', error.body?.errors?.[0]?.message || error.message);
-
-    // If sandbox credentials are still being provisioned by Worldline (e.g. ACCESS_TO_MERCHANT_NOT_ALLOWED),
-    // provide an automatic graceful fallback to the realistic Worldline Checkout Simulator
-    // so development, client demos, and booking tests are never blocked!
-    return createMockHostedCheckoutSession({
-      bookingId,
-      amountPaise,
-      currencyCode,
-      customer,
-      returnUrl,
-      apiNotice: error.body?.errors?.[0]?.message || error.message,
-    });
+    // Never fall back to the simulator here: that would let customers "pay" without paying.
+    // While sandbox credentials are being provisioned, set WORLDLINE_ENV=mock explicitly instead.
+    const reason = error.body?.errors?.[0]?.message || error.message;
+    console.error('[Worldline] Hosted checkout creation failed:', reason);
+    throw new Error(`Worldline hosted checkout creation failed: ${reason}`);
   }
 }
 
@@ -198,8 +182,14 @@ export async function createHostedCheckoutSession({
  * }>}
  */
 export async function getHostedCheckoutStatus(hostedCheckoutId) {
-  // If this was initiated in mock mode
-  if (hostedCheckoutId.startsWith('MOCK_WL_') || hostedCheckoutId.startsWith('SIM_')) {
+  const isSimulatorSession = hostedCheckoutId.startsWith('MOCK_WL_') || hostedCheckoutId.startsWith('SIM_');
+
+  // Simulator sessions are trusted only when the simulator is explicitly enabled
+  if (isSimulatorSession && !isMockGatewayEnabled()) {
+    return { isPaid: false, status: 'SIMULATOR_DISABLED', isMock: true };
+  }
+
+  if (isSimulatorSession) {
     return {
       isPaid: true,
       status: 'PAYMENT_CREATED',

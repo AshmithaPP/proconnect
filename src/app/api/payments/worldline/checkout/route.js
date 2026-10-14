@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { verifyRequestOrigin } from '@/lib/security/origin';
-import { getBookingById, updateBookingPaymentOrderId } from '@/features/booking/booking.repository';
+import {
+  getBookingById,
+  updateBookingPaymentOrderId,
+  isSlotTakenByPaidBooking,
+  markBookingCancelled,
+} from '@/features/booking/booking.repository';
 import { createHostedCheckoutSession } from '@/features/payments/worldline.client';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
@@ -52,6 +57,25 @@ export async function POST(request) {
     return NextResponse.json(
       { error: 'This booking has already been paid and confirmed.' },
       { status: 400, headers: NO_STORE }
+    );
+  }
+
+  if (booking.bookingStatus === 'cancelled') {
+    return NextResponse.json(
+      { error: 'This booking has expired. Please submit the form again.' },
+      { status: 409, headers: NO_STORE }
+    );
+  }
+
+  // Someone may have paid for the same slot since this booking was created
+  if (await isSlotTakenByPaidBooking(booking.preferredTimeSlot, booking.bookingId)) {
+    await markBookingCancelled(booking.bookingId);
+    return NextResponse.json(
+      {
+        error: `The time slot "${booking.preferredTimeSlot}" was just booked by someone else. Please choose another time slot.`,
+        fieldErrors: { timeSlot: 'This time slot is already reserved.' },
+      },
+      { status: 409, headers: NO_STORE }
     );
   }
 
