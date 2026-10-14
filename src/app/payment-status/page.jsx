@@ -22,7 +22,15 @@ export default async function PaymentStatusPage({ searchParams }) {
   const params = await searchParams;
   const bookingIdParam = typeof params?.bookingId === 'string' ? params.bookingId : '';
   const requestedStatus = typeof params?.status === 'string' ? params.status : '';
-  const reason = typeof params?.reason === 'string' ? params.reason : '';
+  const reasonCode = typeof params?.reason === 'string' ? params.reason : '';
+  // Gateway / internal codes → customer-friendly text
+  const reason = reasonCode.includes('REJECTED')
+    ? 'The payment was declined. Please try again with another card.'
+    : reasonCode === 'amount_mismatch' || reasonCode === 'booking_cancelled'
+    ? 'We could not confirm this payment automatically. Our team will contact you shortly.'
+    : reasonCode
+    ? 'The payment could not be completed. Please try again.'
+    : '';
 
   const booking = UUID_REGEX.test(bookingIdParam) ? await getBookingById(bookingIdParam) : null;
 
@@ -72,7 +80,7 @@ export default async function PaymentStatusPage({ searchParams }) {
             : isCancelled
             ? 'The payment session was cancelled. You can retry anytime to reserve your consultation slot.'
             : reason
-            ? `Transaction could not be completed: ${reason}`
+            ? reason
             : 'We were unable to verify your payment with Worldline. Please try again or contact support.'}
         </p>
 

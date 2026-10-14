@@ -6,7 +6,6 @@ import {
   markBookingCancelled,
 } from '@/features/booking/booking.repository';
 import { getHostedCheckoutStatus } from '@/features/payments/worldline.client';
-import { isMockGatewayEnabled } from '@/features/payments/payment.config';
 
 /**
  * GET /api/payments/worldline/return
@@ -28,7 +27,6 @@ import { isMockGatewayEnabled } from '@/features/payments/payment.config';
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const hostedCheckoutId = searchParams.get('hostedCheckoutId');
-  const simulatedAction = searchParams.get('action'); // Simulator only (WORLDLINE_ENV=mock)
 
   const appBaseUrl = getAppBaseUrl(request);
   const statusUrl = (params) => `${appBaseUrl}/payment-status?${new URLSearchParams(params).toString()}`;
@@ -49,14 +47,6 @@ export async function GET(request) {
   if (booking.payment?.paymentStatus === 'paid') {
     return NextResponse.redirect(
       statusUrl({ bookingId, status: 'success', paymentId: booking.payment.providerPaymentId || '' })
-    );
-  }
-
-  // Simulator buttons (cancel / decline) are honoured only when the simulator is enabled
-  if (isMockGatewayEnabled() && (simulatedAction === 'cancel' || simulatedAction === 'fail')) {
-    await markBookingCancelled(bookingId);
-    return NextResponse.redirect(
-      statusUrl({ bookingId, status: simulatedAction === 'cancel' ? 'cancelled' : 'failed' })
     );
   }
 
@@ -103,7 +93,10 @@ export async function GET(request) {
     if (verification.isFinalFailure) {
       // Definitively not paid (cancelled / rejected) — release the slot
       await markBookingCancelled(bookingId);
-      return NextResponse.redirect(statusUrl({ bookingId, status: 'failed', reason: verification.status }));
+      const cancelledByCustomer = verification.status === 'CANCELLED_BY_CONSUMER';
+      return NextResponse.redirect(
+        statusUrl({ bookingId, status: cancelledByCustomer ? 'cancelled' : 'failed', reason: verification.status })
+      );
     }
 
     // Outcome not known yet (IN_PROGRESS / STATUS_UNKNOWN): keep the booking pending

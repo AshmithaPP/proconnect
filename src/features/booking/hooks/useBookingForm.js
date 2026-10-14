@@ -17,7 +17,7 @@ const initialForm = {
 
 /**
  * Booking form state, slot availability, and the submit → payment handover flow.
- * @param {(data: object) => void} onSuccess - called with form data + booking once confirmed (mock mode)
+ * @param {(data: object) => void} onSuccess - called with form data + booking when payments are disabled (Worldline mode redirects instead)
  */
 export default function useBookingForm(onSuccess) {
   const [formData, setFormData] = useState(initialForm);
@@ -117,7 +117,7 @@ export default function useBookingForm(onSuccess) {
         return;
       }
 
-      let { booking } = bookingData;
+      const { booking } = bookingData;
 
       // 2. Worldline Payment Gateway Handover
       if (bookingData.paymentMode === 'worldline') {
@@ -145,26 +145,7 @@ export default function useBookingForm(onSuccess) {
         return;
       }
 
-      // 3. Fallback: Internal instant mock confirmation
-      if (bookingData.paymentMode === 'mock') {
-        const paymentRes = await fetch(`/api/bookings/${booking.bookingId}/mock-payment`, {
-          method: 'POST',
-        });
-        const paymentData = await paymentRes.json();
-
-        if (!paymentRes.ok) {
-          setErrorMessage(paymentData.error || 'Payment could not be completed. Please try again.');
-          setIsSubmitting(false);
-          return;
-        }
-
-        booking = {
-          ...booking,
-          bookingStatus: paymentData.booking.bookingStatus,
-          payment: { ...booking.payment, ...paymentData.booking.payment },
-        };
-      }
-
+      // 3. Payments disabled (PAYMENT_MODE=disabled): request stored, show confirmation of receipt
       setIsSubmitting(false);
       onSuccess({ ...formData, booking });
     } catch {

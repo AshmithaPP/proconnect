@@ -4,16 +4,13 @@ import 'server-only';
  * Payment configuration (server-only: reads gateway secrets from env).
  *
  * PAYMENT_MODE:
- *  - "worldline" → Live/Pre-production Worldline Connect Hosted Checkout integration.
- *  - "mock"      → Internal mock payment for instant local confirmation without gateway.
+ *  - "worldline" → Worldline Connect Hosted Checkout (pre-production or live, per WORLDLINE_BASE_URL).
  *  - "disabled"  → bookings are stored as pending_payment and nothing marks them paid.
  */
 
 export function getPaymentMode() {
   const mode = (process.env.PAYMENT_MODE || 'disabled').toLowerCase();
-  if (mode === 'worldline') return 'worldline';
-  if (mode === 'mock') return 'mock';
-  return 'disabled';
+  return mode === 'worldline' ? 'worldline' : 'disabled';
 }
 
 export function getWorldlineConfig() {
@@ -22,16 +19,7 @@ export function getWorldlineConfig() {
     merchantId: process.env.WORLDLINE_MERCHANT_ID || '9000000514',
     apiKeyId: process.env.WORLDLINE_API_KEY_ID || '',
     secretApiKey: process.env.WORLDLINE_SECRET_API_KEY || '',
-    env: process.env.WORLDLINE_ENV || 'preprod',
   };
-}
-
-/**
- * True only when WORLDLINE_ENV=mock. This is the ONLY switch that enables the
- * in-app checkout simulator and trust in MOCK_WL_ session IDs.
- */
-export function isMockGatewayEnabled() {
-  return getWorldlineConfig().env === 'mock';
 }
 
 export function getConsultationFee() {

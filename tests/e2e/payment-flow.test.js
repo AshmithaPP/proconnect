@@ -1,11 +1,10 @@
 /**
- * Slot availability + payment return security tests.
+ * Slot availability + payment return security tests (PAYMENT_MODE=worldline).
  * Usage: npm run test:payment-flow   (BASE_URL defaults to http://localhost:3000)
  *
- * Detects the gateway mode from the server:
- *  - WORLDLINE_ENV=mock  → full simulator flow (cancel frees slot, pay takes slot, double-book blocked)
- *  - any other env       → simulator must be locked down (no fake payments possible)
- * Never calls the real Worldline API.
+ * Creates real hosted checkouts on the Worldline pre-production sandbox (no money moves).
+ * A card payment cannot be completed from a script, so the "paid" state is written
+ * straight to the DB the same way markBookingPaymentSucceeded does.
  */
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
@@ -39,11 +38,20 @@ const db = await mysql.createConnection({
 
 async function bookingState(bookingId) {
   const [rows] = await db.execute(
-    `SELECT b.booking_status, p.payment_status FROM consultation_bookings b
+    `SELECT b.booking_status, p.payment_status, p.provider_order_id FROM consultation_bookings b
      JOIN booking_payments p ON p.booking_id = b.booking_id WHERE b.booking_id = ?`,
     [bookingId]
   );
   return rows[0];
+}
+
+async function markPaidInDb(bookingId, providerOrderId) {
+  await db.execute(
+    `UPDATE booking_payments SET payment_status = 'paid', payment_provider = 'worldline',
+       provider_order_id = ?, provider_payment_id = ? WHERE booking_id = ?`,
+    [providerOrderId, `TEST_PAYMENT_${Date.now()}`, bookingId]
+  );
+  await db.execute(`UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`, [bookingId]);
 }
 
 async function unavailableSlots() {
@@ -91,24 +99,25 @@ async function statusPageText(params) {
 }
 
 async function run() {
+  console.log(`\nPayment flow tests against ${BASE_URL}\n`);
+
   const simulatorRes = await fetch(`${BASE_URL}/mock-worldline/checkout`);
-  const mockMode = simulatorRes.status === 200;
-  console.log(`\nPayment flow tests against ${BASE_URL} (simulator ${mockMode ? 'ENABLED' : 'DISABLED'})\n`);
+  assert(simulatorRes.status === 404, 'In-app payment simulator page no longer exists');
 
   const taken = await unavailableSlots();
   const slot = TIME_SLOTS.find((s) => !taken.includes(s));
 
-  // --- Exploits that must fail in every mode ---
+  // --- Exploits ---
   const { data: victim } = await createBooking(slot);
   const victimId = victim.booking?.bookingId;
-  assert(victimId, 'Booking created for exploit checks', victim);
+  assert(victim.paymentMode === 'worldline' && victimId, 'Booking created in worldline mode', victim);
 
   let location = await hitReturn({ bookingId: victimId });
   let state = await bookingState(victimId);
   assert(location.includes('status=error') && state.payment_status === 'pending',
     'Return URL with only bookingId cannot mark a booking paid', { location, state });
 
-  location = await hitReturn({ hostedCheckoutId: `MOCK_WL_${Date.now()}`, bookingId: victimId });
+  location = await hitReturn({ hostedCheckoutId: `FORGED_${Date.now()}`, bookingId: victimId });
   state = await bookingState(victimId);
   assert(location.includes('unknown_checkout_session') && state.payment_status === 'pending',
     'Forged hostedCheckoutId (not issued by us) is rejected', { location, state });
@@ -119,31 +128,30 @@ async function run() {
   assert(!page.includes('Consultation Booking Confirmed') && page.includes('Payment Not Completed'),
     'Status page ignores a crafted ?status=success for an unpaid booking');
 
-  if (!mockMode) {
-    assert(simulatorRes.status === 404, 'Simulator page returns 404 when WORLDLINE_ENV is not mock');
+  // --- Real Worldline sandbox checkout ---
+  const { status: checkoutStatus, data: checkout } = await startCheckout(victimId);
+  assert(checkoutStatus === 200 && checkout.redirectUrl?.startsWith('https://payment.') && checkout.hostedCheckoutId,
+    'Checkout returns a real Worldline hosted page URL', checkout);
 
-    // A booking that somehow carries a simulator session ID must not be confirmed
-    const forgedId = `MOCK_WL_forged_${Date.now()}`;
-    await db.execute(
-      `UPDATE booking_payments SET provider_order_id = ?, payment_provider = 'worldline' WHERE booking_id = ?`,
-      [forgedId, victimId]
-    );
-    location = await hitReturn({ hostedCheckoutId: forgedId, action: 'cancel' });
-    state = await bookingState(victimId);
-    assert(!location.includes('status=success') && state.payment_status !== 'paid',
-      'Simulator session ID is not trusted when simulator is disabled', { location, state });
-    assert(!(await unavailableSlots()).includes(slot), 'Slot stays free after rejected simulator session');
-    return;
+  if (checkout.redirectUrl) {
+    const hostedPage = await fetch(checkout.redirectUrl);
+    assert(hostedPage.status === 200, 'Worldline hosted payment page loads', hostedPage.status);
   }
 
-  // --- Simulator flow: your exact scenario (book → checkout → Simulate User Cancel) ---
-  const { data: cancelCheckout } = await startCheckout(victimId);
-  assert(cancelCheckout.hostedCheckoutId?.startsWith('MOCK_WL_'), 'Checkout session created', cancelCheckout);
-
-  location = await hitReturn({ hostedCheckoutId: cancelCheckout.hostedCheckoutId, bookingId: victimId, action: 'cancel' });
+  // Customer came back without paying (session still IN_PROGRESS) → stays pending
+  location = await hitReturn({ hostedCheckoutId: checkout.hostedCheckoutId });
   state = await bookingState(victimId);
-  assert(location.includes('status=cancelled') && state.booking_status === 'cancelled' && state.payment_status === 'failed',
-    'Simulate User Cancel → booking cancelled, payment failed', { location, state });
+  assert(location.includes('status=processing') && state.payment_status === 'pending',
+    'Unpaid Worldline session → processing, booking stays pending', { location, state });
+  assert(!(await unavailableSlots()).includes(slot), 'Slot still free while payment is unfinished');
+
+  // --- Old simulator session IDs are never trusted ---
+  const legacyId = `MOCK_WL_legacy_${Date.now()}`;
+  await db.execute(`UPDATE booking_payments SET provider_order_id = ? WHERE booking_id = ?`, [legacyId, victimId]);
+  location = await hitReturn({ hostedCheckoutId: legacyId });
+  state = await bookingState(victimId);
+  assert(!location.includes('status=success') && state.booking_status === 'cancelled' && state.payment_status === 'failed',
+    'Legacy simulator session ID → booking cancelled, never paid', { location, state });
   assert(!(await unavailableSlots()).includes(slot), 'Cancelled booking does NOT take the slot');
 
   const { status: reuseStatus } = await startCheckout(victimId);
@@ -154,23 +162,22 @@ async function run() {
   const paidId = paidBooking.booking?.bookingId;
   assert(rebookStatus === 201, 'Same slot can be booked again after cancel', paidBooking);
 
-  // A rival also starts booking the same slot before anyone pays
   const { data: rival } = await createBooking(slot);
   const rivalId = rival.booking?.bookingId;
   assert(rivalId, 'Rival pending booking allowed on same unpaid slot', rival);
 
-  const { data: paidCheckout } = await startCheckout(paidId);
-  location = await hitReturn({ hostedCheckoutId: paidCheckout.hostedCheckoutId, bookingId: paidId });
-  state = await bookingState(paidId);
-  assert(location.includes('status=success') && state.booking_status === 'confirmed' && state.payment_status === 'paid',
-    'Successful payment confirms booking', { location, state });
+  const paidCheckoutId = `TEST_PAID_${Date.now()}`;
+  await markPaidInDb(paidId, paidCheckoutId);
   assert((await unavailableSlots()).includes(slot), 'Paid booking DOES take the slot');
 
   page = await statusPageText({ bookingId: paidId, status: 'failed' });
   assert(page.includes('Consultation Booking Confirmed'), 'Status page shows the real (paid) state from the DB');
 
-  location = await hitReturn({ hostedCheckoutId: paidCheckout.hostedCheckoutId });
+  location = await hitReturn({ hostedCheckoutId: paidCheckoutId });
   assert(location.includes('status=success'), 'Refreshing the return URL after payment is idempotent');
+
+  const { status: paidCheckoutStatus } = await startCheckout(paidId);
+  assert(paidCheckoutStatus === 400, 'Already-paid booking cannot start another checkout');
 
   const { status: rivalCheckoutStatus } = await startCheckout(rivalId);
   state = await bookingState(rivalId);

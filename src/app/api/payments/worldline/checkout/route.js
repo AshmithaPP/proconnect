@@ -106,7 +106,6 @@ export async function POST(request) {
         success: true,
         hostedCheckoutId: session.hostedCheckoutId,
         redirectUrl: session.redirectUrl,
-        isMock: session.isMock || false,
       },
       { status: 200, headers: NO_STORE }
     );

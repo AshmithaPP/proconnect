@@ -6,6 +6,18 @@ const BASE_URL = process.argv[2] || process.env.BASE_URL || 'http://localhost:30
 const ADMIN_EMAIL = process.argv[3] || 'admin@preconnect.com';
 const ADMIN_PASSWORD = process.argv[4] || 'Password@2026';
 const ORIGIN = new URL(BASE_URL).origin;
+const TEST_EMAIL_DOMAIN = '@acme.com';
+
+const { default: dotenv } = await import('dotenv');
+const { default: mysql } = await import('mysql2/promise');
+dotenv.config({ path: '.env.local', quiet: true });
+const db = await mysql.createConnection({
+  host: process.env.DB_HOST || 'localhost',
+  port: Number(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'preconnect_db',
+});
 
 let passed = 0;
 let failed = 0;
@@ -68,14 +80,21 @@ async function run() {
   assert(createRes.status === 201 && bookingId && created.booking.payment.paymentStatus === 'pending',
     'Valid booking created (201, pending payment)', created);
 
-  // 4. Mock payment confirms it
-  const { res: payRes, data: paid } = await post(`/api/bookings/${bookingId}/mock-payment`);
-  assert(payRes.status === 200 && paid.booking?.payment?.paymentStatus === 'paid',
-    'Mock payment marks booking paid', paid);
+  // 4. Payment happens on Worldline's hosted page, which a script cannot fill in —
+  //    record the paid state directly, as the Worldline return route would
+  await db.execute(
+    `UPDATE booking_payments SET payment_status = 'paid', payment_provider = 'worldline',
+       provider_order_id = ?, provider_payment_id = ? WHERE booking_id = ?`,
+    [`TEST_PAID_${Date.now()}`, `TEST_PAYMENT_${Date.now()}`, bookingId]
+  );
+  await db.execute(`UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`, [bookingId]);
 
-  // 5. Mock payment is idempotent
-  const { data: paidAgain } = await post(`/api/bookings/${bookingId}/mock-payment`);
-  assert(paidAgain.alreadyPaid === true, 'Repeat payment confirmation is idempotent', paidAgain);
+  // 5. Paid booking now blocks the slot
+  {
+    const res = await fetch(`${BASE_URL}/api/bookings/slots`);
+    const { unavailableSlots: nowTaken = [] } = await res.json();
+    assert(nowTaken.includes(freeSlot), 'Paid booking takes the slot');
+  }
 
   // 6. Admin API requires auth
   {
@@ -103,12 +122,19 @@ async function run() {
   }
 
   await post('/api/auth/logout', undefined, { Cookie: cookie });
-
-  console.log(`\nRESULTS: ${passed} passed, ${failed} failed\n`);
-  process.exit(failed > 0 ? 1 : 0);
 }
 
-run().catch((err) => {
+try {
+  await run();
+} catch (err) {
   console.error('Test run crashed:', err);
-  process.exit(1);
-});
+  failed++;
+} finally {
+  const [result] = await db.execute(
+    `DELETE FROM consultation_bookings WHERE work_email LIKE 'test.client+%${TEST_EMAIL_DOMAIN}'`
+  );
+  await db.end();
+  console.log(`\ncleanup: removed ${result.affectedRows} test bookings`);
+  console.log(`RESULTS: ${passed} passed, ${failed} failed\n`);
+  process.exit(failed > 0 ? 1 : 0);
+}

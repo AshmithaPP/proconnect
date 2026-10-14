@@ -10,11 +10,10 @@ import 'server-only';
  *  2. Calling the official "Create Hosted Checkout" endpoint (POST /v1/{merchantId}/hostedCheckouts).
  *  3. Calling the official "Get Hosted Checkout" endpoint (GET /v1/{merchantId}/hostedCheckouts/{hostedCheckoutId})
  *     to perform Dual Verification.
- *  4. Providing a built-in Mock Simulator, enabled ONLY when WORLDLINE_ENV=mock.
  */
 
 import connectSdk from 'connect-sdk-nodejs';
-import { getWorldlineConfig, isMockGatewayEnabled } from '@/features/payments/payment.config';
+import { getWorldlineConfig } from '@/features/payments/payment.config';
 
 // Singleton instance to prevent re-initializing the SDK on every API request
 let sdkClientInstance = null;
@@ -87,8 +86,7 @@ export function buildHostedCheckoutUrl(partialRedirectUrl) {
  *   success: boolean,
  *   hostedCheckoutId: string,
  *   redirectUrl: string,
- *   returnMac?: string,
- *   isMock?: boolean
+ *   returnMac?: string
  * }>}
  */
 export async function createHostedCheckoutSession({
@@ -114,10 +112,7 @@ export async function createHostedCheckoutSession({
       },
       customer: {
         billingAddress: {
-          city: 'Hoofddorp',
-          zip: '2132 JB',
           countryCode: 'IN',
-          street: 'Neptunusstraat',
         },
         personalInformation: {
           name: {
@@ -127,7 +122,7 @@ export async function createHostedCheckoutSession({
         },
         contactDetails: {
           emailAddress: customer.email,
-          phoneNumber: customer.phone,
+          phoneNumber: String(customer.phone || '').replace(/[^\d+]/g, ''),
         },
       },
       references: {
@@ -139,13 +134,13 @@ export async function createHostedCheckoutSession({
       locale: 'en_GB',
       returnUrl: returnUrl,
       showResultPage: false, // Redirect directly back to our returnUrl without extra Worldline confirmation screen
+      // Offer cards only: other methods listed for INR on this account (e.g. PayPal 840) are
+      // rejected by Worldline with NO_VALID_PROVIDERS_FOUND_FOR_COMBINATION.
+      paymentProductFilters: {
+        restrictTo: { groups: ['cards'] },
+      },
     },
   };
-
-  // Simulator is used only when explicitly enabled (WORLDLINE_ENV=mock) — never as a fallback
-  if (isMockGatewayEnabled()) {
-    return createMockHostedCheckoutSession({ bookingId, amountPaise, currencyCode, customer, returnUrl });
-  }
 
   try {
     const client = getWorldlineClient();
@@ -177,11 +172,8 @@ export async function createHostedCheckoutSession({
       hostedCheckoutId: response.hostedCheckoutId,
       returnMac: response.RETURNMAC,
       redirectUrl,
-      isMock: false,
     };
   } catch (error) {
-    // Never fall back to the simulator here: that would let customers "pay" without paying.
-    // While sandbox credentials are being provisioned, set WORLDLINE_ENV=mock explicitly instead.
     const reason = error.body?.errors?.[0]?.message || error.message;
     console.error('[Worldline] Hosted checkout creation failed:', reason);
     throw new Error(`Worldline hosted checkout creation failed: ${reason}`);
@@ -203,28 +195,15 @@ export async function createHostedCheckoutSession({
  *   status: string,
  *   paymentId?: string,
  *   amount?: number,
- *   currency?: string,
- *   isMock?: boolean
+ *   currency?: string
  * }>}
  * When neither flag is set (IN_PROGRESS, STATUS_UNKNOWN) the outcome is not known yet:
  * leave the booking pending — never cancel it, the customer may still be paying.
  */
 export async function getHostedCheckoutStatus(hostedCheckoutId) {
-  const isSimulatorSession = hostedCheckoutId.startsWith('MOCK_WL_') || hostedCheckoutId.startsWith('SIM_');
-
-  // Simulator sessions are trusted only when the simulator is explicitly enabled
-  if (isSimulatorSession && !isMockGatewayEnabled()) {
-    return { isPaid: false, isFinalFailure: true, status: 'SIMULATOR_DISABLED', isMock: true };
-  }
-
-  if (isSimulatorSession) {
-    return {
-      isPaid: true,
-      isFinalFailure: false,
-      status: 'PAYMENT_CREATED',
-      paymentId: `PAY_${hostedCheckoutId.replace('MOCK_WL_', '')}`,
-      isMock: true,
-    };
+  // IDs from the removed in-app simulator never existed at Worldline — never treat them as paid
+  if (hostedCheckoutId.startsWith('MOCK_WL_') || hostedCheckoutId.startsWith('SIM_')) {
+    return { isPaid: false, isFinalFailure: true, status: 'LEGACY_SIMULATOR_SESSION' };
   }
 
   const config = getWorldlineConfig();
@@ -262,42 +241,9 @@ export async function getHostedCheckoutStatus(hostedCheckoutId) {
       paymentId: payment?.id || hostedCheckoutId,
       amount: payment?.paymentOutput?.amountOfMoney?.amount,
       currency: payment?.paymentOutput?.amountOfMoney?.currencyCode,
-      isMock: false,
     };
   } catch (error) {
     console.error('[Worldline] Status verification error:', error.message);
     throw error;
   }
-}
-
-/**
- * Helper: Generates a realistic mock checkout session pointing to our in-app Worldline simulator.
- */
-function createMockHostedCheckoutSession({ bookingId, amountPaise, currencyCode, customer, returnUrl, apiNotice }) {
-  const mockHostedCheckoutId = `MOCK_WL_${Date.now()}`;
-  const mockReturnMac = `MAC_${Date.now()}`;
-
-  // Encodes checkout context so our simulator displays accurate amount, customer, and booking details
-  const params = new URLSearchParams({
-    hostedCheckoutId: mockHostedCheckoutId,
-    bookingId: bookingId,
-    amount: String(amountPaise),
-    currency: currencyCode,
-    email: customer.email,
-    name: customer.fullName || '',
-    returnUrl: returnUrl,
-    returnMac: mockReturnMac,
-  });
-
-  if (apiNotice) {
-    params.set('notice', apiNotice);
-  }
-
-  return {
-    success: true,
-    hostedCheckoutId: mockHostedCheckoutId,
-    returnMac: mockReturnMac,
-    redirectUrl: `/mock-worldline/checkout?${params.toString()}`,
-    isMock: true,
-  };
 }

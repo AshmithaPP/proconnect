@@ -20,7 +20,6 @@ const host = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 const merchantId = process.env.WORLDLINE_MERCHANT_ID || '';
 const apiKeyId = process.env.WORLDLINE_API_KEY_ID || '';
 const secretApiKey = process.env.WORLDLINE_SECRET_API_KEY || '';
-const env = process.env.WORLDLINE_ENV || 'preprod';
 const createCheckout = process.argv.includes('--create');
 
 const ok = (msg) => console.log(`  ✓ ${msg}`);
@@ -33,10 +32,10 @@ async function main() {
   console.log(`  Merchant ID   : ${merchantId || '(missing)'}`);
   console.log(`  API key ID    : ${apiKeyId || '(missing)'}`);
   console.log(`  Secret key    : ${secretApiKey ? 'set' : '(missing)'}`);
-  console.log(`  WORLDLINE_ENV : ${env}${env === 'mock' ? '  (app uses the in-app simulator, not Worldline)' : ''}`);
-  if (!['mock', 'preprod', 'production'].includes(env)) {
-    bad(`WORLDLINE_ENV="${env}" is not a known value — use "mock", "preprod" or "production"`);
-    hint('Anything other than "mock" disables the in-app simulator and calls real Worldline');
+  console.log(`  PAYMENT_MODE  : ${process.env.PAYMENT_MODE || '(missing → disabled)'}`);
+  if (process.env.PAYMENT_MODE !== 'worldline') {
+    bad('PAYMENT_MODE is not "worldline" — the booking form will not send customers to Worldline');
+    hint('Set PAYMENT_MODE=worldline in .env.local');
   }
   if (!merchantId || !apiKeyId || !secretApiKey) {
     bad('Merchant ID / API key ID / secret key missing');
@@ -89,7 +88,7 @@ async function main() {
   }
 
   if (!createCheckout) {
-    console.log('\nAll checks passed. Set WORLDLINE_ENV=preprod in .env.local and restart the dev server.');
+    console.log('\nAll checks passed. Restart the dev server after any .env.local change.');
     console.log('Optional: npm run worldline:check -- --create   (opens a real ₹10 test payment page)\n');
     return;
   }

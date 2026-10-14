@@ -156,7 +156,7 @@ export async function createBookingWithPendingPayment({ booking, amountPaise, cu
  *
  * @param {Object} params
  * @param {string} params.bookingId
- * @param {string} params.paymentProvider - e.g. "mock", "razorpay"
+ * @param {string} params.paymentProvider - e.g. "worldline"
  * @param {string} params.providerPaymentId
  * @param {string} [params.providerOrderId]
  * @returns {Promise<{ outcome: 'paid' | 'already_paid' | 'not_found', paymentId?: string, paidAt?: Date }>}
