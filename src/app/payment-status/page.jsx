@@ -133,14 +133,9 @@ export default async function PaymentStatusPage({ searchParams }) {
         {/* Actions */}
         <div style={styles.actionGroup}>
           {isSuccess ? (
-            <>
-              <Link href="/" style={styles.primaryBtn}>
-                Return to Homepage
-              </Link>
-              <Link href="/admin/dashboard" style={styles.secondaryBtn}>
-                View on Admin Dashboard →
-              </Link>
-            </>
+            <Link href="/" style={styles.primaryBtn}>
+              Return to Homepage
+            </Link>
           ) : (
             <>
               <Link href="/#book" style={styles.primaryBtn}>
