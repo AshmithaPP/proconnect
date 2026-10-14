@@ -60,7 +60,7 @@ export async function POST(request) {
     );
   }
 
-  if (booking.bookingStatus === 'cancelled') {
+  if (booking.bookingStatus === 'cancelled' || !booking.payment) {
     return NextResponse.json(
       { error: 'This booking has expired. Please submit the form again.' },
       { status: 409, headers: NO_STORE }
@@ -112,6 +112,8 @@ export async function POST(request) {
     );
   } catch (error) {
     console.error('[Worldline Checkout Initiation Error]:', error);
+    // No checkout session exists, so the customer cannot pay this booking: close it out
+    await markBookingCancelled(booking.bookingId);
     return NextResponse.json(
       { error: 'Could not connect to Worldline payment gateway. Please try again.' },
       { status: 500, headers: NO_STORE }

@@ -98,7 +98,7 @@ async function run() {
   {
     const res = await fetch(`${BASE_URL}/admin/dashboard`, { headers: { Cookie: cookie } });
     const html = await res.text();
-    assert(res.status === 200 && html.includes('Paid Consultation Bookings') && html.includes(bookingId.slice(0, 8)),
+    assert(res.status === 200 && html.includes('Consultation Bookings') && html.includes(bookingId.slice(0, 8)),
       'Paid booking rendered on /admin/dashboard');
   }
 

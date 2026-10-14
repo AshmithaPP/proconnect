@@ -214,7 +214,21 @@ export async function markBookingPaymentSucceeded({
   });
 }
 
-function mapPaidBookingRow(row) {
+/**
+ * Admin-facing status, derived from booking + latest payment:
+ *  - paid       → payment captured, booking confirmed
+ *  - pending    → submitted, waiting for payment
+ *  - cancelled  → customer cancelled / payment failed (slot released)
+ *  - no_payment → booking row has no payment record (e.g. payment row deleted manually)
+ */
+function deriveBookingStatus(row) {
+  if (!row.payment_id) return 'no_payment';
+  if (row.payment_status === 'paid') return 'paid';
+  if (row.booking_status === 'cancelled' || row.payment_status === 'failed') return 'cancelled';
+  return 'pending';
+}
+
+function mapBookingRow(row) {
   return {
     bookingId: row.booking_id,
     fullName: row.full_name,
@@ -228,77 +242,116 @@ function mapPaidBookingRow(row) {
     salesChallengeOther: row.sales_challenge_other,
     preferredTimeSlot: row.preferred_time_slot,
     bookingStatus: row.booking_status,
+    status: deriveBookingStatus(row),
     bookedAt: row.created_at,
-    payment: {
-      paymentId: row.payment_id,
-      paymentProvider: row.payment_provider,
-      providerPaymentId: row.provider_payment_id,
-      amountPaise: row.amount_paise,
-      currencyCode: row.currency_code,
-      paymentStatus: row.payment_status,
-      paidAt: row.paid_at,
-    },
+    payment: row.payment_id
+      ? {
+          paymentId: row.payment_id,
+          paymentProvider: row.payment_provider,
+          providerOrderId: row.provider_order_id,
+          providerPaymentId: row.provider_payment_id,
+          amountPaise: row.amount_paise,
+          currencyCode: row.currency_code,
+          paymentStatus: row.payment_status,
+          paidAt: row.paid_at,
+        }
+      : null,
   };
 }
 
+/** Joins each booking to its LATEST payment row (if any). Booking table alias `b`, payment alias `p`. */
+const BOOKING_WITH_LATEST_PAYMENT = `
+  FROM consultation_bookings b
+  LEFT JOIN booking_payments p ON p.payment_id = (
+    SELECT lp.payment_id FROM booking_payments lp
+    WHERE lp.booking_id = b.booking_id
+    ORDER BY lp.created_at DESC
+    LIMIT 1
+  )`;
+
+const BOOKING_COLUMNS = `
+  b.booking_id, b.full_name, b.company_name, b.work_email, b.phone_number,
+  b.user_role, b.user_role_other, b.sales_team_size,
+  b.sales_challenge, b.sales_challenge_other, b.preferred_time_slot,
+  b.booking_status, b.created_at,
+  p.payment_id, p.payment_provider, p.provider_order_id, p.provider_payment_id,
+  p.amount_paise, p.currency_code, p.payment_status, p.paid_at`;
+
+export const BOOKING_STATUS_FILTERS = ['all', 'paid', 'pending', 'cancelled', 'no_payment'];
+
+/** SQL WHERE clause per status filter — mirrors deriveBookingStatus(). */
+const STATUS_FILTER_SQL = {
+  all: '1 = 1',
+  paid: `p.payment_status = 'paid'`,
+  pending: `p.payment_id IS NOT NULL AND p.payment_status = 'pending' AND b.booking_status <> 'cancelled'`,
+  cancelled: `p.payment_id IS NOT NULL AND p.payment_status <> 'paid'
+              AND (b.booking_status = 'cancelled' OR p.payment_status = 'failed')`,
+  no_payment: 'p.payment_id IS NULL',
+};
+
 /**
- * List paid (confirmed) bookings, most recently paid first.
+ * List bookings with their latest payment, newest first (paid filter: most recently paid first).
  * @param {Object} params
- * @param {number} params.page - 1-based
- * @param {number} params.pageSize
- * @returns {Promise<{ bookings: object[], totalCount: number }>}
+ * @param {'all'|'paid'|'pending'|'cancelled'|'no_payment'} [params.status]
+ * @param {number} [params.page] - 1-based
+ * @param {number} [params.pageSize]
+ * @returns {Promise<{ bookings: object[], totalCount: number, status: string }>}
  */
-export async function listPaidBookings({ page = 1, pageSize = 20 }) {
+export async function listBookings({ status = 'all', page = 1, pageSize = 20 } = {}) {
+  const safeStatus = BOOKING_STATUS_FILTERS.includes(status) ? status : 'all';
   const safePageSize = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
   const safePage = Math.max(Number(page) || 1, 1);
   const offset = (safePage - 1) * safePageSize;
+  const where = STATUS_FILTER_SQL[safeStatus];
+  const orderBy = safeStatus === 'paid' ? 'p.paid_at DESC' : 'b.created_at DESC';
 
   // LIMIT/OFFSET are inlined as validated integers; mysql2 prepared statements reject them as params
   const rows = await query(
-    `SELECT
-       b.booking_id, b.full_name, b.company_name, b.work_email, b.phone_number,
-       b.user_role, b.user_role_other, b.sales_team_size,
-       b.sales_challenge, b.sales_challenge_other, b.preferred_time_slot,
-       b.booking_status, b.created_at,
-       p.payment_id, p.payment_provider, p.provider_payment_id,
-       p.amount_paise, p.currency_code, p.payment_status, p.paid_at
-     FROM consultation_bookings b
-     JOIN booking_payments p ON p.booking_id = b.booking_id
-     WHERE p.payment_status = 'paid'
-     ORDER BY p.paid_at DESC
+    `SELECT ${BOOKING_COLUMNS}
+     ${BOOKING_WITH_LATEST_PAYMENT}
+     WHERE ${where}
+     ORDER BY ${orderBy}
      LIMIT ${safePageSize} OFFSET ${offset}`
   );
 
   const countRows = await query(
-    `SELECT COUNT(*) AS total_count FROM booking_payments WHERE payment_status = 'paid'`
+    `SELECT COUNT(*) AS total_count ${BOOKING_WITH_LATEST_PAYMENT} WHERE ${where}`
   );
 
   return {
-    bookings: rows.map(mapPaidBookingRow),
+    bookings: rows.map(mapBookingRow),
     totalCount: Number(countRows[0].total_count),
+    status: safeStatus,
   };
 }
 
 /**
- * Aggregate booking KPIs for the admin dashboard.
- * @returns {Promise<{ paidBookingCount: number, paidTodayCount: number, totalRevenuePaise: number, pendingPaymentCount: number }>}
+ * Aggregate booking KPIs for the admin dashboard (one row per booking, latest payment).
+ * @returns {Promise<{ totalBookingCount: number, paidBookingCount: number, paidTodayCount: number,
+ *   totalRevenuePaise: number, pendingPaymentCount: number, cancelledCount: number, noPaymentCount: number }>}
  */
 export async function getBookingStats() {
   const rows = await query(
     `SELECT
-       COALESCE(SUM(payment_status = 'paid'), 0) AS paid_booking_count,
-       COALESCE(SUM(payment_status = 'paid' AND paid_at >= CURDATE()), 0) AS paid_today_count,
-       COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN amount_paise ELSE 0 END), 0) AS total_revenue_paise,
-       COALESCE(SUM(payment_status = 'pending'), 0) AS pending_payment_count
-     FROM booking_payments`
+       COUNT(*) AS total_booking_count,
+       COALESCE(SUM(${STATUS_FILTER_SQL.paid}), 0) AS paid_booking_count,
+       COALESCE(SUM(${STATUS_FILTER_SQL.paid} AND p.paid_at >= CURDATE()), 0) AS paid_today_count,
+       COALESCE(SUM(CASE WHEN ${STATUS_FILTER_SQL.paid} THEN p.amount_paise ELSE 0 END), 0) AS total_revenue_paise,
+       COALESCE(SUM(${STATUS_FILTER_SQL.pending}), 0) AS pending_payment_count,
+       COALESCE(SUM(${STATUS_FILTER_SQL.cancelled}), 0) AS cancelled_count,
+       COALESCE(SUM(${STATUS_FILTER_SQL.no_payment}), 0) AS no_payment_count
+     ${BOOKING_WITH_LATEST_PAYMENT}`
   );
 
   const row = rows[0];
   return {
+    totalBookingCount: Number(row.total_booking_count),
     paidBookingCount: Number(row.paid_booking_count),
     paidTodayCount: Number(row.paid_today_count),
     totalRevenuePaise: Number(row.total_revenue_paise),
     pendingPaymentCount: Number(row.pending_payment_count),
+    cancelledCount: Number(row.cancelled_count),
+    noPaymentCount: Number(row.no_payment_count),
   };
 }
 
@@ -309,23 +362,15 @@ export async function getBookingStats() {
  */
 export async function getBookingById(bookingId) {
   const rows = await query(
-    `SELECT
-       b.booking_id, b.full_name, b.company_name, b.work_email, b.phone_number,
-       b.user_role, b.user_role_other, b.sales_team_size,
-       b.sales_challenge, b.sales_challenge_other, b.preferred_time_slot,
-       b.booking_status, b.created_at,
-       p.payment_id, p.payment_provider, p.provider_order_id, p.provider_payment_id,
-       p.amount_paise, p.currency_code, p.payment_status, p.paid_at
-     FROM consultation_bookings b
-     LEFT JOIN booking_payments p ON p.booking_id = b.booking_id
+    `SELECT ${BOOKING_COLUMNS}
+     ${BOOKING_WITH_LATEST_PAYMENT}
      WHERE b.booking_id = ?
-     ORDER BY p.created_at DESC
      LIMIT 1`,
     [bookingId]
   );
 
   if (!rows || rows.length === 0) return null;
-  return mapPaidBookingRow(rows[0]);
+  return mapBookingRow(rows[0]);
 }
 
 /**
@@ -352,13 +397,7 @@ export async function updateBookingPaymentOrderId(bookingId, providerOrderId, pa
  */
 export async function getBookingByProviderOrderId(providerOrderId) {
   const rows = await query(
-    `SELECT
-       b.booking_id, b.full_name, b.company_name, b.work_email, b.phone_number,
-       b.user_role, b.user_role_other, b.sales_team_size,
-       b.sales_challenge, b.sales_challenge_other, b.preferred_time_slot,
-       b.booking_status, b.created_at,
-       p.payment_id, p.payment_provider, p.provider_order_id, p.provider_payment_id,
-       p.amount_paise, p.currency_code, p.payment_status, p.paid_at
+    `SELECT ${BOOKING_COLUMNS}
      FROM consultation_bookings b
      JOIN booking_payments p ON p.booking_id = b.booking_id
      WHERE p.provider_order_id = ?
@@ -368,6 +407,6 @@ export async function getBookingByProviderOrderId(providerOrderId) {
   );
 
   if (!rows || rows.length === 0) return null;
-  return mapPaidBookingRow(rows[0]);
+  return mapBookingRow(rows[0]);
 }
 
