@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyRequestOrigin } from '@/lib/security/origin';
-import { getAppBaseUrl } from '@/lib/http/app-url';
+import { getPaymentReturnBaseUrl } from '@/lib/http/app-url';
 import {
   getBookingById,
   updateBookingPaymentOrderId,
@@ -81,7 +81,7 @@ export async function POST(request) {
   }
 
   // 4. Construct absolute return URL where Worldline will redirect customer back
-  const returnUrl = `${getAppBaseUrl(request)}/api/payments/worldline/return`;
+  const returnUrl = `${getPaymentReturnBaseUrl(request)}/api/payments/worldline/return`;
 
   try {
     // 5. Call Worldline Create Hosted Checkout API

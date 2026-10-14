@@ -16,3 +16,28 @@ export function getAppBaseUrl(request) {
   }
   return request.nextUrl.origin;
 }
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Base URL to hand to a payment gateway as the customer return URL.
+ *
+ * Worldline's firewall rejects any request whose body contains "localhost" / "127.0.0.1"
+ * (HTML 403 from the load balancer). In development we therefore swap a loopback host for
+ * "localtest.me" — a public DNS name that resolves back to this machine — so the customer
+ * still lands on the local dev server. Set PAYMENT_RETURN_BASE_URL (e.g. an ngrok URL) to
+ * override. Production always uses getAppBaseUrl() (NEXT_PUBLIC_APP_URL).
+ *
+ * @param {import('next/server').NextRequest} request
+ * @returns {string}
+ */
+export function getPaymentReturnBaseUrl(request) {
+  const override = process.env.PAYMENT_RETURN_BASE_URL;
+  if (override) return override.replace(/\/+$/, '');
+
+  const base = new URL(getAppBaseUrl(request));
+  if (process.env.NODE_ENV !== 'production' && LOOPBACK_HOSTS.has(base.hostname)) {
+    base.hostname = 'localtest.me';
+  }
+  return base.origin;
+}

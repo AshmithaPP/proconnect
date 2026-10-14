@@ -48,6 +48,17 @@ export function getWorldlineClient() {
 }
 
 /**
+ * Worldline (GlobalCollect platform) limits merchantReference to 30 characters, so the
+ * 36-char booking UUID cannot be sent as-is. Use "PC" + the first 28 hex digits of the
+ * UUID: deterministic, still unique in practice, and searchable in the Worldline portal.
+ * (Bookings are matched back by hostedCheckoutId, never by this reference.)
+ * @param {string} bookingId
+ */
+export function toMerchantReference(bookingId) {
+  return `PC${bookingId.replace(/-/g, '').slice(0, 28).toUpperCase()}`;
+}
+
+/**
  * STEP 1: CREATE HOSTED CHECKOUT SESSION
  * 
  * Invokes Worldline's "Create Hosted Checkout" API:
@@ -108,7 +119,7 @@ export async function createHostedCheckoutSession({
         },
       },
       references: {
-        merchantReference: bookingId,
+        merchantReference: toMerchantReference(bookingId),
       },
     },
     hostedCheckoutSpecificInput: {
@@ -128,11 +139,14 @@ export async function createHostedCheckoutSession({
     const client = getWorldlineClient();
 
     // Call the official Worldline SDK: POST /v1/{merchantId}/hostedCheckouts
-    const response = await client.v1.hostedcheckouts.create(config.merchantId, requestBody, null);
+    // SDK returns { status: <HTTP status>, body: <API response>, isSuccess }
+    const sdkResponse = await client.v1.hostedcheckouts.create(config.merchantId, requestBody, null);
+    const response = sdkResponse?.body;
 
-    // If Worldline rejected the merchant authorization or returned non-200
-    if (!response || response.isSuccess === false || !response.hostedCheckoutId) {
-      const errMsg = response?.body?.errors?.[0]?.message || `HTTP ${response?.status || 403}`;
+    // If Worldline rejected the request (non-2xx or no session ID)
+    if (!sdkResponse?.isSuccess || !response?.hostedCheckoutId) {
+      const err = response?.errors?.[0];
+      const errMsg = err ? `${err.id}${err.propertyName ? ` (${err.propertyName})` : ''}: ${err.message}` : `HTTP ${sdkResponse?.status}`;
       throw new Error(`Worldline rejected hosted checkout creation: ${errMsg}`);
     }
 
@@ -207,7 +221,12 @@ export async function getHostedCheckoutStatus(hostedCheckoutId) {
 
   try {
     // Call official Worldline SDK: GET /v1/{merchantId}/hostedCheckouts/{hostedCheckoutId}
-    const response = await client.v1.hostedcheckouts.get(config.merchantId, hostedCheckoutId, null);
+    const sdkResponse = await client.v1.hostedcheckouts.get(config.merchantId, hostedCheckoutId, null);
+    if (!sdkResponse?.isSuccess) {
+      const err = sdkResponse?.body?.errors?.[0];
+      throw new Error(`Worldline status lookup failed: ${err ? err.id : `HTTP ${sdkResponse?.status}`}`);
+    }
+    const response = sdkResponse.body;
 
     // Hosted checkout status values:
     // - "PAYMENT_CREATED": a payment object exists — its outcome is in paymentStatusCategory

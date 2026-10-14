@@ -6,9 +6,10 @@
  *                                         prints the real Worldline payment page URL
  *
  * Never prints the secret API key.
+ * Note: Worldline's load balancer answers UNSIGNED requests with an HTML 403, so
+ * reachability is only judged from a properly signed API call.
  */
 import dns from 'dns/promises';
-import https from 'https';
 import connectSdk from 'connect-sdk-nodejs';
 import dotenv from 'dotenv';
 
@@ -25,18 +26,6 @@ const createCheckout = process.argv.includes('--create');
 const ok = (msg) => console.log(`  ✓ ${msg}`);
 const bad = (msg) => console.log(`  ✗ ${msg}`);
 const hint = (msg) => console.log(`    → ${msg}`);
-
-function probe(hostname) {
-  return new Promise((resolve) => {
-    const req = https.get({ hostname, path: `/v1/${merchantId || '0'}/services/testconnection`, timeout: 15000 }, (res) => {
-      let body = '';
-      res.on('data', (c) => (body += c));
-      res.on('end', () => resolve({ status: res.statusCode, server: res.headers.server || '', body }));
-    });
-    req.on('timeout', () => req.destroy(new Error('timeout')));
-    req.on('error', (err) => resolve({ error: err.message }));
-  });
-}
 
 async function main() {
   console.log('\n1. Configuration (.env.local)');
@@ -69,24 +58,7 @@ async function main() {
     return process.exit(1);
   }
 
-  console.log('\n3. Network reachability (unauthenticated request)');
-  const p = await probe(host);
-  if (p.error) {
-    bad(`Connection failed: ${p.error}`);
-    hint('Firewall / proxy / no internet. Try another network.');
-    return process.exit(1);
-  }
-  if (p.body.includes('MISSING_OR_INVALID_AUTHORIZATION') || p.body.trim().startsWith('{')) {
-    ok(`Reached the Worldline Connect API (HTTP ${p.status} JSON, as expected without credentials)`);
-  } else {
-    bad(`Blocked before reaching Worldline: HTTP ${p.status} from "${p.server || 'unknown'}" (HTML, not API JSON)`);
-    hint('Your network/IP is being refused by Worldline\'s load balancer. Fix options:');
-    hint('a) Ask Worldline support to allow your public IP for pre-production API access');
-    hint('b) Run this check from another network (office, mobile hotspot, cloud server, VPN)');
-    return process.exit(1);
-  }
-
-  console.log('\n4. Credentials (GET /v1/{merchantId}/services/testconnection)');
+  console.log('\n3. Network + credentials (signed GET /v1/{merchantId}/services/testconnection)');
   const client = connectSdk.init({
     host, scheme: 'https', port: 443, enableLogging: false,
     apiKeyId, secretApiKey, integrator: 'Insight-HCM-ProConnect',
@@ -95,14 +67,24 @@ async function main() {
     const res = await client.v1.services.testconnection(merchantId, null);
     if (res.status !== 200) {
       const err = res.body?.errors?.[0];
-      bad(`Rejected: HTTP ${res.status} ${err ? `${err.code} ${err.id}` : ''}`);
-      if (err?.id === 'MISSING_OR_INVALID_AUTHORIZATION') hint('API key ID / secret wrong, revoked, or for another cluster');
+      bad(`Worldline rejected the request: HTTP ${res.status} ${err ? `${err.code} ${err.id}` : ''}`);
+      if (err?.id === 'MISSING_OR_INVALID_AUTHORIZATION') {
+        hint('API key ID / secret do not match (check look-alike characters such as I vs l, O vs 0),');
+        hint('or the key was revoked, or it belongs to another cluster');
+      }
       if (err?.id === 'ACCESS_TO_MERCHANT_NOT_ALLOWED') hint('These keys are not linked to this merchant ID / platform');
       return process.exit(1);
     }
-    ok(`Credentials accepted (${res.body?.result || 'OK'})`);
+    ok(`Reached Worldline and credentials accepted (${res.body?.result || 'OK'})`);
   } catch (err) {
-    bad(`Request failed: ${err.message}`);
+    // The SDK fails to parse an HTML body — that comes from the load balancer, not the API
+    if (/Unexpected token '<'/.test(err.message)) {
+      bad(`Blocked before reaching Worldline (HTTP ${err.status ?? '?'} HTML from the load balancer)`);
+      hint('Signed requests are being refused at the network edge. Try another network, or ask Worldline support.');
+    } else {
+      bad(`Request failed: ${err.message}`);
+      hint('Firewall / proxy / no internet?');
+    }
     return process.exit(1);
   }
 
@@ -112,25 +94,24 @@ async function main() {
     return;
   }
 
-  console.log('\n5. Create a real ₹10 test hosted checkout');
+  console.log('\n4. Create a real ₹10 test hosted checkout');
   const res = await client.v1.hostedcheckouts.create(merchantId, {
     order: {
       amountOfMoney: { amount: 1000, currencyCode: 'INR' },
       customer: { billingAddress: { countryCode: 'IN' } },
-      references: { merchantReference: `connectivity-check-${Date.now()}` },
+      references: { merchantReference: `CHK${Date.now()}` },
     },
     hostedCheckoutSpecificInput: { locale: 'en_GB', returnUrl: 'https://example.com/worldline-check-done', showResultPage: true },
   }, null);
-  if (res.status !== 201 && !res.body?.hostedCheckoutId) {
+  if (!res.body?.hostedCheckoutId) {
     const err = res.body?.errors?.[0];
     bad(`Rejected: HTTP ${res.status} ${err ? `${err.code} ${err.id}${err.propertyName ? ` (${err.propertyName})` : ''}: ${err.message}` : ''}`);
     hint('Often a merchant setup issue (currency INR / payment products not enabled) — ask Worldline support');
     return process.exit(1);
   }
-  const partial = res.body.partialRedirectUrl;
   ok(`hostedCheckoutId ${res.body.hostedCheckoutId}`);
-  console.log(`\n  Open this REAL Worldline payment page and pay with a Worldline test card:`);
-  console.log(`  https://${partial.replace(/^https?:\/\//, '')}\n`);
+  console.log('\n  Open this REAL Worldline payment page and pay with a Worldline test card:');
+  console.log(`  https://${res.body.partialRedirectUrl.replace(/^https?:\/\//, '')}\n`);
 }
 
 main();
