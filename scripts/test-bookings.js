@@ -58,8 +58,12 @@ async function run() {
     assert(res.status === 403, 'Cross-origin booking rejected with 403');
   }
 
-  // 3. Valid booking created as pending
-  const { res: createRes, data: created } = await post('/api/bookings', validBooking);
+  // 3. Valid booking created as pending (on a slot that is still free today)
+  const slotsRes = await fetch(`${BASE_URL}/api/bookings/slots`);
+  const { unavailableSlots = [] } = await slotsRes.json();
+  const { TIME_SLOTS } = await import('../lib/booking/options.js');
+  const freeSlot = TIME_SLOTS.find((slot) => !unavailableSlots.includes(slot));
+  const { res: createRes, data: created } = await post('/api/bookings', { ...validBooking, timeSlot: freeSlot });
   const bookingId = created.booking?.bookingId;
   assert(createRes.status === 201 && bookingId && created.booking.payment.paymentStatus === 'pending',
     'Valid booking created (201, pending payment)', created);
