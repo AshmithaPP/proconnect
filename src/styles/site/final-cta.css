@@ -1,0 +1,56 @@
+/* --- Final CTA --- */
+.final-cta {
+  background: var(--color-secondary);
+  border-radius: 26px;
+  color: #ffffff;
+  padding: 80px 30px;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.final-cta::before {
+  content: "";
+  position: absolute;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(240, 90, 30, 0.3), transparent 70%);
+  top: -220px;
+  right: -140px;
+}
+
+.final-cta::after {
+  content: "";
+  position: absolute;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(240, 90, 30, 0.18), transparent 70%);
+  bottom: -180px;
+  left: -100px;
+}
+
+.final-cta .eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.final-cta h2 {
+  color: #ffffff;
+  font-size: clamp(1.7rem, 3.6vw, 2.6rem);
+  margin-top: 12px;
+  position: relative;
+  z-index: 1;
+  letter-spacing: -0.02em;
+  font-weight: 900;
+}
+
+.final-cta p {
+  color: #b9b3a9;
+  position: relative;
+  z-index: 1;
+}

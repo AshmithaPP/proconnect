@@ -1,0 +1,68 @@
+/* --- Guarantee Banner --- */
+.guarantee {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-radius: 26px;
+  padding: 56px 44px;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .guarantee { padding: 40px 24px; }
+}
+
+.guarantee::before {
+  content: "";
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.14), transparent 70%);
+  top: -180px;
+  left: -120px;
+}
+
+.guarantee::after {
+  content: "";
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(20, 20, 20, 0.18), transparent 70%);
+  bottom: -140px;
+  right: -80px;
+}
+
+.guarantee .badge-icon {
+  font-size: 3.5rem;
+  margin-bottom: 16px;
+  display: inline-block;
+  position: relative;
+  z-index: 1;
+}
+
+.guarantee h2 {
+  color: #ffffff;
+  font-size: clamp(1.6rem, 3.4vw, 2.4rem);
+  position: relative;
+  z-index: 1;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.guarantee p {
+  color: rgba(255, 255, 255, 0.92);
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+  margin: 16px auto 0;
+  font-size: 0.95rem;
+}
+
+.guarantee .btn-pro {
+  margin-top: 28px;
+  position: relative;
+  z-index: 1;
+}

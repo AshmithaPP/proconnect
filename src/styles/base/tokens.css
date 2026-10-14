@@ -1,0 +1,87 @@
+/* ==========================================================================
+   2. BRAND COLOR TOKENS
+   ========================================================================== */
+:root {
+  --brand-orange: #F05A1E;
+  --brand-orange-dark: #D94A12;
+  --brand-orange-soft: #FFE9DC;
+  --brand-orange-glow: rgba(240, 90, 30, 0.28);
+  --brand-black: #141414;
+  --brand-ink: #1c1c1c;
+  --brand-cream: #FBF6EF;
+  --brand-cream-alt: #F6EFE4;
+  --brand-grey: #6b6b6b;
+  --brand-grey-muted: #9a958c;
+  --brand-green-bg: #EAF3E2;
+  --brand-green-text: #3d6b2a;
+
+/* ==========================================================================
+   3. SEMANTIC COLOR TOKENS
+   ========================================================================== */
+  --color-primary: var(--brand-orange);
+  --color-primary-hover: var(--brand-orange-dark);
+  --color-primary-soft: var(--brand-orange-soft);
+  --color-secondary: var(--brand-black);
+  --color-background: var(--brand-cream);
+  --color-surface: #ffffff;
+  --color-surface-alt: var(--brand-cream-alt);
+  --color-surface-dark: var(--brand-black);
+  --color-text: var(--brand-ink);
+  --color-text-muted: var(--brand-grey);
+  --color-border: rgba(20, 20, 20, 0.08);
+  --color-border-subtle: rgba(20, 20, 20, 0.06);
+  --color-border-dark: rgba(255, 255, 255, 0.1);
+  --color-success: var(--brand-green-text);
+  --color-success-bg: var(--brand-green-bg);
+  --color-warning: #f5a623;
+  --color-error: #c0392b;
+
+/* ==========================================================================
+   4. TYPOGRAPHY TOKENS
+   ========================================================================== */
+  --font-body: 'Poppins', sans-serif;
+  --font-size-xs: 0.72rem;
+  --font-size-sm: 0.85rem;
+  --font-size-base: 1rem;
+  --font-size-md: 1.15rem;
+  --font-size-lg: 1.4rem;
+  --font-size-xl: 1.8rem;
+  --font-size-2xl: 2.5rem;
+  --line-height-tight: 1.15;
+  --line-height-normal: 1.65;
+
+/* ==========================================================================
+   5. SPACING TOKENS
+   ========================================================================== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 30px;
+  --space-8: 40px;
+  --space-9: 60px;
+  --space-10: 80px;
+
+/* ==========================================================================
+   6. LAYOUT & CONTAINER TOKENS
+   ========================================================================== */
+  --container-max-width: 1200px;
+  --container-padding: 20px;
+
+/* ==========================================================================
+   7. BORDER RADIUS & SHADOW TOKENS
+   ========================================================================== */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 4px 14px rgba(20, 20, 20, 0.04);
+  --shadow-md: 0 12px 30px rgba(20, 20, 20, 0.08);
+  --shadow-lg: 0 24px 60px rgba(20, 20, 20, 0.1);
+  --shadow-primary: 0 14px 32px rgba(240, 90, 30, 0.34);
+  --shadow-primary-hover: 0 18px 38px rgba(240, 90, 30, 0.42);
+}

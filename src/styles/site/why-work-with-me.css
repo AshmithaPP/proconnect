@@ -1,0 +1,35 @@
+/* --- Why Card Section --- */
+.why-card {
+  background: #ffffff;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 18px;
+  padding: 30px 26px;
+  height: 100%;
+  transition: all 0.35s ease;
+}
+
+.why-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(240, 90, 30, 0.35);
+}
+
+.why-card .num {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: var(--color-primary);
+  line-height: 1;
+  margin-bottom: 14px;
+  letter-spacing: -0.04em;
+}
+
+.why-card h5 {
+  font-size: 1rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.why-card p {
+  font-size: 0.86rem;
+  margin-bottom: 0;
+}

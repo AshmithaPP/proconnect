@@ -1,0 +1,25 @@
+/* --- Footer --- */
+footer {
+  background: var(--color-secondary);
+  color: #b9b3a9;
+  padding: 20px 0;
+}
+
+footer a {
+  color: #b9b3a9;
+  font-size: 0.9rem;
+  transition: color 0.3s;
+}
+
+footer a:hover {
+  color: var(--color-primary);
+}
+
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: #7d786e;
+}

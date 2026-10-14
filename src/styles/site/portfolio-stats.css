@@ -1,0 +1,66 @@
+/* --- Portfolio Stats (Running Counters) --- */
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+@media (max-width: 767px) {
+  .portfolio-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.p-stat {
+  background: #ffffff;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 20px;
+  padding: 34px 20px;
+  text-align: center;
+  transition: all 0.35s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.p-stat::after {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(240, 90, 30, 0.1), transparent 70%);
+  top: -50px;
+  right: -50px;
+}
+
+.p-stat:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(240, 90, 30, 0.35);
+}
+
+.p-stat .num {
+  font-size: clamp(2rem, 4.5vw, 3rem);
+  font-weight: 900;
+  color: var(--color-primary);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s;
+}
+
+.p-stat .num .suffix {
+  font-size: 0.6em;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+
+.p-stat .lbl {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-top: 10px;
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+}

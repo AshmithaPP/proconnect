@@ -1,0 +1,148 @@
+/* ==========================================================================
+   8. GLOBAL ELEMENTS & ACCESSIBILITY
+   ========================================================================== */
+body {
+  font-family: var(--font-body);
+  background: var(--color-background);
+  color: var(--color-text);
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+  line-height: var(--line-height-normal);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-body);
+  font-weight: 800;
+  line-height: var(--line-height-tight);
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+p {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  line-height: var(--line-height-normal);
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+.orange {
+  color: var(--color-primary);
+}
+
+/* Layout Utilities (replacing Bootstrap container & grid) */
+.container {
+  width: 100%;
+  max-width: var(--container-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--container-padding);
+  padding-right: var(--container-padding);
+}
+
+.sec-pad {
+  padding: 30px 0;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.d-flex {
+  display: flex;
+}
+
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+.align-items-center {
+  align-items: center;
+}
+
+.justify-content-center {
+  justify-content: center;
+}
+
+.justify-content-between {
+  justify-content: space-between;
+}
+
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 14px; }
+.gap-4 { gap: 24px; }
+.gap-5 { gap: 40px; }
+
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 14px; }
+.mt-4 { margin-top: 24px; }
+.mb-0 { margin-bottom: 0; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.w-100 { width: 100%; }
+
+/* Grid Helpers */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+
+@media (max-width: 991px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .grid-2, .grid-3, .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Section Header */
+.section-head {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.section-head .eyebrow {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.section-head h2 {
+  font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+  margin-top: 12px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.section-head p {
+  max-width: 620px;
+  margin: 14px auto 0;
+  font-size: 0.95rem;
+}

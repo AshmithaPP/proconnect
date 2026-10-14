@@ -1,0 +1,30 @@
+/* ==========================================================================
+   10. SECTION-SPECIFIC STYLES
+   ========================================================================== */
+
+/* --- Attention Bar --- */
+.attention-bar {
+  background: var(--color-secondary);
+  color: #ffffff;
+  text-align: center;
+  padding: 14px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.attention-bar .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  margin-right: 8px;
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(240, 90, 30, 0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(240, 90, 30, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(240, 90, 30, 0); }
+}

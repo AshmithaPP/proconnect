@@ -1,0 +1,64 @@
+/* --- Timeline Section --- */
+.timeline-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.timeline {
+  position: relative;
+  padding-left: 36px;
+  max-width: 760px;
+  width: 100%;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--color-primary), rgba(240, 90, 30, 0.15));
+}
+
+.tl-item {
+  position: relative;
+  padding: 0 0 36px 0;
+}
+
+.tl-item::before {
+  content: "";
+  position: absolute;
+  left: -30px;
+  top: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 3px solid var(--color-background);
+  box-shadow: 0 0 0 3px rgba(240, 90, 30, 0.18);
+}
+
+.tl-time {
+  display: inline-block;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 10px;
+}
+
+.tl-item h5 {
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+  font-weight: 800;
+}
+
+.tl-item p {
+  font-size: 0.88rem;
+  margin-bottom: 0;
+}
