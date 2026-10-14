@@ -111,7 +111,8 @@ async function main() {
   }
   ok(`hostedCheckoutId ${res.body.hostedCheckoutId}`);
   console.log('\n  Open this REAL Worldline payment page and pay with a Worldline test card:');
-  console.log(`  https://${res.body.partialRedirectUrl.replace(/^https?:\/\//, '')}\n`);
+  const subdomain = process.env.WORLDLINE_CHECKOUT_SUBDOMAIN || 'payment';
+  console.log(`  https://${subdomain}.${res.body.partialRedirectUrl.replace(/^https?:\/\//, '')}\n`);
 }
 
 main();

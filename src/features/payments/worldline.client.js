@@ -59,6 +59,18 @@ export function toMerchantReference(bookingId) {
 }
 
 /**
+ * Hosted checkout page URL = "https://" + subdomain + "." + partialRedirectUrl.
+ * The subdomain is configured in Configuration Center → Hosted payment pages → Subdomains
+ * ("payment" by default); override with WORLDLINE_CHECKOUT_SUBDOMAIN.
+ * @param {string} partialRedirectUrl
+ */
+export function buildHostedCheckoutUrl(partialRedirectUrl) {
+  const subdomain = (process.env.WORLDLINE_CHECKOUT_SUBDOMAIN || 'payment').replace(/\.+$/, '');
+  const partial = String(partialRedirectUrl || '').replace(/^https?:\/\//, '').replace(/^\/+/, '');
+  return `https://${subdomain}.${partial}`;
+}
+
+/**
  * STEP 1: CREATE HOSTED CHECKOUT SESSION
  * 
  * Invokes Worldline's "Create Hosted Checkout" API:
@@ -152,14 +164,13 @@ export async function createHostedCheckoutSession({
 
     // Worldline returns:
     // {
-    //   hostedCheckoutId: "90000005140000...",
+    //   hostedCheckoutId: "06acf449-...",
     //   RETURNMAC: "...",
-    //   partialRedirectUrl: "payment.preprod.direct.worldline-solutions.com/checkout/..."
+    //   partialRedirectUrl: "pay1.preprod.checkout.worldline-solutions.com/checkout/..."
     // }
-    const partialUrl = response.partialRedirectUrl || '';
-    const redirectUrl = partialUrl.startsWith('http')
-      ? partialUrl
-      : `https://${partialUrl.replace(/^\/+/, '')}`;
+    // The full page URL is https://{merchant subdomain}.{partialRedirectUrl}. Without the
+    // subdomain prefix Worldline answers "Page not found (404)".
+    const redirectUrl = buildHostedCheckoutUrl(response.partialRedirectUrl);
 
     return {
       success: true,
