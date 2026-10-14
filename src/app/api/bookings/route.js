@@ -45,9 +45,18 @@ export async function POST(request) {
     );
   }
 
-  // 4. Persist booking + pending payment
+  // 4. A paid booking flow needs a configured fee — never create ₹0 bookings by accident
+  const { amountPaise, currencyCode } = getConsultationFee();
+  if (getPaymentMode() !== 'disabled' && amountPaise <= 0) {
+    console.error('Booking rejected: CONSULTATION_FEE_PAISE is missing or not a positive integer');
+    return NextResponse.json(
+      { error: 'Bookings are temporarily unavailable. Please try again later.' },
+      { status: 503, headers: NO_STORE }
+    );
+  }
+
+  // 5. Persist booking + pending payment
   try {
-    const { amountPaise, currencyCode } = getConsultationFee();
     const { bookingId, paymentId } = await createBookingWithPendingPayment({
       booking: validation.booking,
       amountPaise,

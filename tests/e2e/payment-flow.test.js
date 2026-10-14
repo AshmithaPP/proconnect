@@ -85,6 +85,11 @@ async function hitReturn(params) {
   return res.headers.get('location') || '';
 }
 
+async function statusPageText(params) {
+  const res = await fetch(`${BASE_URL}/payment-status?${new URLSearchParams(params)}`);
+  return res.text();
+}
+
 async function run() {
   const simulatorRes = await fetch(`${BASE_URL}/mock-worldline/checkout`);
   const mockMode = simulatorRes.status === 200;
@@ -109,6 +114,10 @@ async function run() {
     'Forged hostedCheckoutId (not issued by us) is rejected', { location, state });
 
   assert(!(await unavailableSlots()).includes(slot), 'Pending (unpaid) booking does NOT take the slot');
+
+  let page = await statusPageText({ bookingId: victimId, status: 'success', paymentId: 'FAKE' });
+  assert(!page.includes('Consultation Booking Confirmed') && page.includes('Payment Not Completed'),
+    'Status page ignores a crafted ?status=success for an unpaid booking');
 
   if (!mockMode) {
     assert(simulatorRes.status === 404, 'Simulator page returns 404 when WORLDLINE_ENV is not mock');
@@ -156,6 +165,9 @@ async function run() {
   assert(location.includes('status=success') && state.booking_status === 'confirmed' && state.payment_status === 'paid',
     'Successful payment confirms booking', { location, state });
   assert((await unavailableSlots()).includes(slot), 'Paid booking DOES take the slot');
+
+  page = await statusPageText({ bookingId: paidId, status: 'failed' });
+  assert(page.includes('Consultation Booking Confirmed'), 'Status page shows the real (paid) state from the DB');
 
   location = await hitReturn({ hostedCheckoutId: paidCheckout.hostedCheckoutId });
   assert(location.includes('status=success'), 'Refreshing the return URL after payment is idempotent');

@@ -1,19 +1,41 @@
-'use client';
-
-import React, { Suspense } from 'react';
+import React from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { CheckCircleIcon } from '@/components/ui/Icons';
+import { getBookingById } from '@/features/booking/booking.repository';
+import { formatAmount } from '@/features/payments/format-amount';
 
-function PaymentStatusContent() {
-  const searchParams = useSearchParams();
-  const status = searchParams.get('status') || 'success';
-  const bookingId = searchParams.get('bookingId') || '';
-  const paymentId = searchParams.get('paymentId') || '';
-  const reason = searchParams.get('reason') || '';
+export const dynamic = 'force-dynamic';
 
-  const isSuccess = status === 'success';
-  const isCancelled = status === 'cancelled';
+export const metadata = {
+  title: 'Payment Status — ProConnect',
+  robots: { index: false, follow: false },
+};
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Payment result page. The outcome shown is read from the DATABASE, never trusted from
+ * the query string — a crafted "?status=success" cannot display a fake confirmation.
+ * The query string only supplies the booking ID and an optional failure reason.
+ */
+export default async function PaymentStatusPage({ searchParams }) {
+  const params = await searchParams;
+  const bookingIdParam = typeof params?.bookingId === 'string' ? params.bookingId : '';
+  const requestedStatus = typeof params?.status === 'string' ? params.status : '';
+  const reason = typeof params?.reason === 'string' ? params.reason : '';
+
+  const booking = UUID_REGEX.test(bookingIdParam) ? await getBookingById(bookingIdParam) : null;
+
+  // paid | pending | cancelled | no_payment | null (unknown booking)
+  const dbStatus = booking?.status || null;
+  const isSuccess = dbStatus === 'paid';
+  const isProcessing = dbStatus === 'pending' && requestedStatus === 'processing';
+  const isCancelled = dbStatus === 'cancelled' && requestedStatus === 'cancelled';
+  const bookingId = booking?.bookingId || '';
+  const paymentId = isSuccess ? booking.payment.providerPaymentId || '' : '';
+  const amountLabel = booking?.payment
+    ? `${formatAmount(booking.payment.amountPaise, booking.payment.currencyCode)} ${booking.payment.currencyCode}`
+    : '—';
 
   return (
     <div style={styles.container}>
@@ -24,8 +46,8 @@ function PaymentStatusContent() {
             <div style={styles.successIcon}>
               <CheckCircleIcon />
             </div>
-          ) : isCancelled ? (
-            <div style={styles.cancelledIcon}>⊘</div>
+          ) : isCancelled || isProcessing ? (
+            <div style={styles.cancelledIcon}>{isProcessing ? '⏳' : '⊘'}</div>
           ) : (
             <div style={styles.failedIcon}>✗</div>
           )}
@@ -35,6 +57,8 @@ function PaymentStatusContent() {
         <h1 style={styles.title}>
           {isSuccess
             ? 'Consultation Booking Confirmed!'
+            : isProcessing
+            ? 'Payment Processing'
             : isCancelled
             ? 'Payment Cancelled'
             : 'Payment Not Completed'}
@@ -43,6 +67,8 @@ function PaymentStatusContent() {
         <p style={styles.subtitle}>
           {isSuccess
             ? 'Your payment was successfully verified with Worldline. A confirmation has been registered.'
+            : isProcessing
+            ? 'Worldline has not confirmed your payment yet. Please refresh this page in a minute — do not pay again.'
             : isCancelled
             ? 'The payment session was cancelled. You can retry anytime to reserve your consultation slot.'
             : reason
@@ -69,7 +95,7 @@ function PaymentStatusContent() {
             )}
             <div style={styles.receiptRow}>
               <span style={styles.receiptLabel}>Amount:</span>
-              <span style={styles.receiptValue}>₹999.00 INR</span>
+              <span style={styles.receiptValue}>{amountLabel}</span>
             </div>
             <div style={styles.receiptRow}>
               <span style={styles.receiptLabel}>Status:</span>
@@ -79,7 +105,7 @@ function PaymentStatusContent() {
                   ...(isSuccess ? styles.statusBadgeSuccess : styles.statusBadgeFailed),
                 }}
               >
-                {isSuccess ? 'PAID & CONFIRMED' : isCancelled ? 'CANCELLED' : 'FAILED'}
+                {isSuccess ? 'PAID & CONFIRMED' : isProcessing ? 'PROCESSING' : isCancelled ? 'CANCELLED' : 'FAILED'}
               </span>
             </div>
           </div>
@@ -263,17 +289,3 @@ const styles = {
     gap: '8px',
   },
 };
-
-export default function PaymentStatusPage() {
-  return (
-    <Suspense
-      fallback={
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <p>Verifying payment status...</p>
-        </div>
-      }
-    >
-      <PaymentStatusContent />
-    </Suspense>
-  );
-}

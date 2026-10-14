@@ -21,7 +21,8 @@ import { isMockGatewayEnabled } from '@/features/payments/payment.config';
  *     (the booking is resolved from the DB, never from client-supplied bookingId).
  *  2. DUAL VERIFICATION: Server calls Worldline (GET /v1/{merchantId}/hostedCheckouts/{id})
  *     to confirm that the payment actually succeeded on Worldline's bank servers.
- *  3. Updates MySQL booking to 'confirmed' and payment to 'paid' — or cancels it so the slot stays free.
+ *  3. Paid → confirm booking. Definitive failure → cancel (slot stays free).
+ *     Unknown yet (IN_PROGRESS) → leave pending and show a 'processing' page.
  *  4. Redirects the customer to the friendly /payment-status receipt page.
  */
 export async function GET(request) {
@@ -64,6 +65,21 @@ export async function GET(request) {
     const verification = await getHostedCheckoutStatus(hostedCheckoutId);
 
     if (verification.isPaid) {
+      // Defence in depth: the captured amount must match what this booking costs
+      const expected = booking.payment;
+      if (
+        (verification.amount !== undefined && Number(verification.amount) !== Number(expected.amountPaise)) ||
+        (verification.currency !== undefined && verification.currency !== expected.currencyCode)
+      ) {
+        console.error('[Worldline Return] Amount mismatch — booking left pending for review:', {
+          bookingId,
+          hostedCheckoutId,
+          expected: `${expected.amountPaise} ${expected.currencyCode}`,
+          received: `${verification.amount} ${verification.currency}`,
+        });
+        return NextResponse.redirect(statusUrl({ bookingId, status: 'error', reason: 'amount_mismatch' }));
+      }
+
       // 3. Mark booking as paid and confirmed in MySQL
       const result = await markBookingPaymentSucceeded({
         bookingId,
@@ -75,7 +91,7 @@ export async function GET(request) {
       if (result.outcome === 'not_found') {
         // Booking was cancelled before the gateway confirmed payment — needs manual follow-up/refund
         console.error('[Worldline Return] Payment confirmed for cancelled booking:', bookingId, hostedCheckoutId);
-        return NextResponse.redirect(statusUrl({ bookingId, status: 'error', message: 'booking_cancelled' }));
+        return NextResponse.redirect(statusUrl({ bookingId, status: 'error', reason: 'booking_cancelled' }));
       }
 
       // 4. Redirect to public success receipt page
@@ -84,11 +100,16 @@ export async function GET(request) {
       );
     }
 
-    // Payment was not authorized, cancelled, or still pending — release the slot
-    await markBookingCancelled(bookingId);
-    return NextResponse.redirect(statusUrl({ bookingId, status: 'failed', reason: verification.status }));
+    if (verification.isFinalFailure) {
+      // Definitively not paid (cancelled / rejected) — release the slot
+      await markBookingCancelled(bookingId);
+      return NextResponse.redirect(statusUrl({ bookingId, status: 'failed', reason: verification.status }));
+    }
+
+    // Outcome not known yet (IN_PROGRESS / STATUS_UNKNOWN): keep the booking pending
+    return NextResponse.redirect(statusUrl({ bookingId, status: 'processing' }));
   } catch (err) {
     console.error('[Worldline Return Error]:', err.message);
-    return NextResponse.redirect(statusUrl({ bookingId, status: 'error', message: err.message }));
+    return NextResponse.redirect(statusUrl({ bookingId, status: 'error', reason: 'verification_failed' }));
   }
 }

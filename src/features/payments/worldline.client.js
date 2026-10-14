@@ -173,25 +173,29 @@ export async function createHostedCheckoutSession({
  * 
  * @param {string} hostedCheckoutId
  * @returns {Promise<{
- *   isPaid: boolean,
+ *   isPaid: boolean,       // money confirmed — safe to confirm the booking
+ *   isFinalFailure: boolean, // definitively not paid — safe to release the slot
  *   status: string,
  *   paymentId?: string,
  *   amount?: number,
  *   currency?: string,
  *   isMock?: boolean
  * }>}
+ * When neither flag is set (IN_PROGRESS, STATUS_UNKNOWN) the outcome is not known yet:
+ * leave the booking pending — never cancel it, the customer may still be paying.
  */
 export async function getHostedCheckoutStatus(hostedCheckoutId) {
   const isSimulatorSession = hostedCheckoutId.startsWith('MOCK_WL_') || hostedCheckoutId.startsWith('SIM_');
 
   // Simulator sessions are trusted only when the simulator is explicitly enabled
   if (isSimulatorSession && !isMockGatewayEnabled()) {
-    return { isPaid: false, status: 'SIMULATOR_DISABLED', isMock: true };
+    return { isPaid: false, isFinalFailure: true, status: 'SIMULATOR_DISABLED', isMock: true };
   }
 
   if (isSimulatorSession) {
     return {
       isPaid: true,
+      isFinalFailure: false,
       status: 'PAYMENT_CREATED',
       paymentId: `PAY_${hostedCheckoutId.replace('MOCK_WL_', '')}`,
       isMock: true,
@@ -205,16 +209,26 @@ export async function getHostedCheckoutStatus(hostedCheckoutId) {
     // Call official Worldline SDK: GET /v1/{merchantId}/hostedCheckouts/{hostedCheckoutId}
     const response = await client.v1.hostedcheckouts.get(config.merchantId, hostedCheckoutId, null);
 
-    // Worldline response status values:
-    // - "PAYMENT_CREATED": Payment completed and authorized/captured.
-    // - "IN_PROGRESS": Customer is still on the hosted checkout page.
-    // - "CANCELLED_BY_CONSUMER": Customer pressed cancel on Worldline page.
-    const isPaid = response.status === 'PAYMENT_CREATED';
-    const payment = response.createdPaymentOutput?.payment;
+    // Hosted checkout status values:
+    // - "PAYMENT_CREATED": a payment object exists — its outcome is in paymentStatusCategory
+    //     (SUCCESSFUL | REJECTED | STATUS_UNKNOWN). PAYMENT_CREATED alone does NOT mean paid.
+    // - "IN_PROGRESS": customer is still on the hosted checkout page.
+    // - "CANCELLED_BY_CONSUMER": customer pressed cancel on the Worldline page.
+    // - "CLIENT_NOT_ELIGIBLE_FOR_SELECTED_PAYMENT_PRODUCT": payment product refused.
+    const output = response.createdPaymentOutput;
+    const payment = output?.payment;
+    const category = output?.paymentStatusCategory;
+
+    const isPaid = response.status === 'PAYMENT_CREATED' && category === 'SUCCESSFUL';
+    const isFinalFailure =
+      response.status === 'CANCELLED_BY_CONSUMER' ||
+      response.status === 'CLIENT_NOT_ELIGIBLE_FOR_SELECTED_PAYMENT_PRODUCT' ||
+      (response.status === 'PAYMENT_CREATED' && category === 'REJECTED');
 
     return {
       isPaid,
-      status: response.status,
+      isFinalFailure,
+      status: category ? `${response.status}:${category}` : response.status,
       paymentId: payment?.id || hostedCheckoutId,
       amount: payment?.paymentOutput?.amountOfMoney?.amount,
       currency: payment?.paymentOutput?.amountOfMoney?.currencyCode,
