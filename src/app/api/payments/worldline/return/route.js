@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAppBaseUrl } from '@/lib/http/app-url';
-import {
-  getBookingByProviderOrderId,
-  markBookingPaymentSucceeded,
-  markBookingCancelled,
-} from '@/features/booking/booking.repository';
-import { getHostedCheckoutStatus } from '@/features/payments/worldline.client';
+import { getBookingByProviderOrderId } from '@/features/booking/booking.repository';
+import { reconcileWorldlineBooking } from '@/features/payments/worldline.reconcile';
 
 /**
  * GET /api/payments/worldline/return
@@ -20,7 +16,7 @@ import { getHostedCheckoutStatus } from '@/features/payments/worldline.client';
  *     (the booking is resolved from the DB, never from client-supplied bookingId).
  *  2. DUAL VERIFICATION: Server calls Worldline (GET /v1/{merchantId}/hostedCheckouts/{id})
  *     to confirm that the payment actually succeeded on Worldline's bank servers.
- *  3. Paid → confirm booking. Definitive failure → cancel (slot stays free).
+ *  3. Authorised-only → capture. Paid → confirm booking. Definitive failure → cancel (slot stays free).
  *     Unknown yet (IN_PROGRESS) → leave pending and show a 'processing' page.
  *  4. Redirects the customer to the friendly /payment-status receipt page.
  */
@@ -43,64 +39,23 @@ export async function GET(request) {
 
   const { bookingId } = booking;
 
-  // Already confirmed (e.g. customer refreshed the return URL) — just show the receipt
-  if (booking.payment?.paymentStatus === 'paid') {
-    return NextResponse.redirect(
-      statusUrl({ bookingId, status: 'success', paymentId: booking.payment.providerPaymentId || '' })
-    );
-  }
-
   try {
-    // 2. DUAL VERIFICATION: Ask Worldline directly if payment was authorized
-    const verification = await getHostedCheckoutStatus(hostedCheckoutId);
+    // 2-3. Verify with Worldline (capturing an authorised-only payment) and update MySQL
+    const result = await reconcileWorldlineBooking(booking);
 
-    if (verification.isPaid) {
-      // Defence in depth: the captured amount must match what this booking costs
-      const expected = booking.payment;
-      if (
-        (verification.amount !== undefined && Number(verification.amount) !== Number(expected.amountPaise)) ||
-        (verification.currency !== undefined && verification.currency !== expected.currencyCode)
-      ) {
-        console.error('[Worldline Return] Amount mismatch — booking left pending for review:', {
-          bookingId,
-          hostedCheckoutId,
-          expected: `${expected.amountPaise} ${expected.currencyCode}`,
-          received: `${verification.amount} ${verification.currency}`,
-        });
-        return NextResponse.redirect(statusUrl({ bookingId, status: 'error', reason: 'amount_mismatch' }));
-      }
-
-      // 3. Mark booking as paid and confirmed in MySQL
-      const result = await markBookingPaymentSucceeded({
-        bookingId,
-        paymentProvider: 'worldline',
-        providerPaymentId: verification.paymentId || hostedCheckoutId,
-        providerOrderId: hostedCheckoutId,
-      });
-
-      if (result.outcome === 'not_found') {
-        // Booking was cancelled before the gateway confirmed payment — needs manual follow-up/refund
-        console.error('[Worldline Return] Payment confirmed for cancelled booking:', bookingId, hostedCheckoutId);
-        return NextResponse.redirect(statusUrl({ bookingId, status: 'error', reason: 'booking_cancelled' }));
-      }
-
-      // 4. Redirect to public success receipt page
-      return NextResponse.redirect(
-        statusUrl({ bookingId, status: 'success', paymentId: verification.paymentId || '' })
-      );
+    switch (result.outcome) {
+      case 'paid':
+        // 4. Redirect to public success receipt page
+        return NextResponse.redirect(statusUrl({ bookingId, status: 'success', paymentId: result.paymentId || '' }));
+      case 'amount_mismatch':
+      case 'booking_cancelled':
+        return NextResponse.redirect(statusUrl({ bookingId, status: 'error', reason: result.outcome }));
+      case 'cancelled':
+      case 'failed':
+        return NextResponse.redirect(statusUrl({ bookingId, status: result.outcome, reason: result.reason }));
+      default:
+        return NextResponse.redirect(statusUrl({ bookingId, status: 'processing' }));
     }
-
-    if (verification.isFinalFailure) {
-      // Definitively not paid (cancelled / rejected) — release the slot
-      await markBookingCancelled(bookingId);
-      const cancelledByCustomer = verification.status === 'CANCELLED_BY_CONSUMER';
-      return NextResponse.redirect(
-        statusUrl({ bookingId, status: cancelledByCustomer ? 'cancelled' : 'failed', reason: verification.status })
-      );
-    }
-
-    // Outcome not known yet (IN_PROGRESS / STATUS_UNKNOWN): keep the booking pending
-    return NextResponse.redirect(statusUrl({ bookingId, status: 'processing' }));
   } catch (err) {
     console.error('[Worldline Return Error]:', err.message);
     return NextResponse.redirect(statusUrl({ bookingId, status: 'error', reason: 'verification_failed' }));

@@ -247,9 +247,17 @@ export async function getHostedCheckoutStatus(hostedCheckoutId) {
       response.status === 'CLIENT_NOT_ELIGIBLE_FOR_SELECTED_PAYMENT_PRODUCT' ||
       (response.status === 'PAYMENT_CREATED' && category === 'REJECTED');
 
+    // Card approved but money not yet taken (merchant set to authorise-only): the caller
+    // captures it with capturePayment() after checking the amount.
+    const needsCapture =
+      response.status === 'PAYMENT_CREATED' &&
+      payment?.status === 'PENDING_APPROVAL' &&
+      payment?.statusOutput?.isAuthorized === true;
+
     return {
       isPaid,
       isFinalFailure,
+      needsCapture,
       status: category ? `${response.status}:${category}` : response.status,
       paymentId: payment?.id || hostedCheckoutId,
       amount: payment?.paymentOutput?.amountOfMoney?.amount,
@@ -259,4 +267,27 @@ export async function getHostedCheckoutStatus(hostedCheckoutId) {
     console.error('[Worldline] Status verification error:', error.message);
     throw error;
   }
+}
+
+/**
+ * STEP 3 (only for authorise-only payments): CAPTURE
+ *
+ * Invokes Worldline's "Approve Payment" API:
+ * POST /v1/{merchantId}/payments/{paymentId}/approve
+ *
+ * @param {string} paymentId
+ * @param {number} amountPaise - full authorised amount
+ * @returns {Promise<{ isPaid: boolean, status: string }>}
+ */
+export async function capturePayment(paymentId, amountPaise) {
+  const config = getWorldlineConfig();
+  const client = getWorldlineClient();
+
+  const sdkResponse = await client.v1.payments.approve(config.merchantId, paymentId, { amount: amountPaise }, null);
+  if (!sdkResponse?.isSuccess) {
+    const err = sdkResponse?.body?.errors?.[0];
+    throw new Error(`Worldline capture failed: ${err ? err.id : `HTTP ${sdkResponse?.status}`}`);
+  }
+  const status = sdkResponse.body?.payment?.status;
+  return { isPaid: CAPTURED_PAYMENT_STATUSES.has(status), status };
 }

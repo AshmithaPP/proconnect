@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { CheckCircleIcon } from '@/components/ui/Icons';
 import { getBookingById } from '@/features/booking/booking.repository';
 import { formatAmount } from '@/features/payments/format-amount';
+import { reconcileWorldlineBooking } from '@/features/payments/worldline.reconcile';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,17 @@ export default async function PaymentStatusPage({ searchParams }) {
     ? 'The payment could not be completed. Please try again.'
     : '';
 
-  const booking = UUID_REGEX.test(bookingIdParam) ? await getBookingById(bookingIdParam) : null;
+  let booking = UUID_REGEX.test(bookingIdParam) ? await getBookingById(bookingIdParam) : null;
+
+  // Still pending → ask Worldline again, so refreshing this page picks up a completed payment
+  if (booking?.status === 'pending' && booking.payment?.paymentProvider === 'worldline' && booking.payment.providerOrderId) {
+    try {
+      await reconcileWorldlineBooking(booking);
+      booking = await getBookingById(booking.bookingId);
+    } catch (err) {
+      console.error('[Payment Status] Worldline re-check failed:', err.message);
+    }
+  }
 
   // paid | pending | cancelled | no_payment | null (unknown booking)
   const dbStatus = booking?.status || null;
