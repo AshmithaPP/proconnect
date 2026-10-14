@@ -8,8 +8,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "migrate": "node scripts/migrate.js",
-    "seed:admin": "node scripts/create-admin.js"
+    "migrate": "node db/migrate.js",
+    "seed:admin": "node db/create-admin.js",
+    "test:auth": "node tests/e2e/auth.test.js",
+    "test:bookings": "node tests/e2e/bookings.test.js",
+    "test:worldline": "node tests/e2e/worldline-flow.test.js",
+    "test:e2e": "npm run test:auth && npm run test:bookings && npm run test:worldline"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -18,6 +22,7 @@
     "mysql2": "^3.24.5",
     "next": "^15.2.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
   }
 }
