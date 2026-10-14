@@ -18,6 +18,9 @@ import { getWorldlineConfig } from '@/features/payments/payment.config';
 // Singleton instance to prevent re-initializing the SDK on every API request
 let sdkClientInstance = null;
 
+// Payment statuses where the money is (being) collected — safe to confirm a booking
+const CAPTURED_PAYMENT_STATUSES = new Set(['CAPTURE_REQUESTED', 'CAPTURED', 'PAID']);
+
 /**
  * Initializes and caches the official Worldline Connect SDK client.
  * 
@@ -129,6 +132,11 @@ export async function createHostedCheckoutSession({
         merchantReference: toMerchantReference(bookingId),
       },
     },
+    // Direct sale: authorise AND capture in one step. Without this the sandbox merchant
+    // only authorises (payment stays PENDING_APPROVAL) and the money is never collected.
+    cardPaymentMethodSpecificInput: {
+      requiresApproval: false,
+    },
     hostedCheckoutSpecificInput: {
       variant: '100',
       locale: 'en_GB',
@@ -228,7 +236,12 @@ export async function getHostedCheckoutStatus(hostedCheckoutId) {
     const payment = output?.payment;
     const category = output?.paymentStatusCategory;
 
-    const isPaid = response.status === 'PAYMENT_CREATED' && category === 'SUCCESSFUL';
+    // SUCCESSFUL also covers an authorisation that was never captured (PENDING_APPROVAL),
+    // so additionally require that capture has been requested or completed.
+    const isPaid =
+      response.status === 'PAYMENT_CREATED' &&
+      category === 'SUCCESSFUL' &&
+      CAPTURED_PAYMENT_STATUSES.has(payment?.status);
     const isFinalFailure =
       response.status === 'CANCELLED_BY_CONSUMER' ||
       response.status === 'CLIENT_NOT_ELIGIBLE_FOR_SELECTED_PAYMENT_PRODUCT' ||
