@@ -30,8 +30,6 @@ const RULES = (overrides = {}) => ({
   consultationFeeRupees: 999,
   bookingWindowDays: 10,
   slotDurationMinutes: 60,
-  customerRescheduleCutoffHours: 0,
-  maxCustomerReschedules: 2,
   ...overrides,
 });
 
@@ -276,8 +274,16 @@ async function run() {
   r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: openLater[2] } });
   assert(r.status === 409 && /maximum/.test(r.data.error), 'Third customer change refused (limit 2)', r.data);
 
-  // Cut-off: changes only up to N hours before
-  await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: RULES({ customerRescheduleCutoffHours: 168, maxCustomerReschedules: 5 }) } });
+  // Cut-off (fixed: 12 hours before): put this TEST booking ~2 hours from now, then try to change it
+  const soon = new Date(Date.now() + 2 * 3600000);
+  const ist = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(soon).map((p) => [p.type, p.value])
+  );
+  await db.execute(
+    `UPDATE consultation_bookings SET consultation_date = ?, slot_start_time = ?, slot_end_time = ADDTIME(?, '01:00:00') WHERE booking_id = ?`,
+    [`${ist.year}-${ist.month}-${ist.day}`, `${ist.hour}:${ist.minute}:07`, `${ist.hour}:${ist.minute}:07`, third.bookingId]
+  );
   const chitraMail = await mailTo(third.workEmail, 'New time');
   r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: linkIn(chitraMail), slotKey: openLater[2] } });
   assert(r.status === 409 && /hours before/.test(r.data.error), 'Change refused inside the cut-off window', r.data);

@@ -134,7 +134,7 @@ async function run() {
   // --- Validation ---
   let r = await api('/api/consultant/schedule', {
     method: 'PUT', cookie: consultant,
-    body: { rules: { consultationFeeRupees: 0, bookingWindowDays: 0, slotDurationMinutes: 5, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 } },
+    body: { rules: { consultationFeeRupees: 0, bookingWindowDays: 0, slotDurationMinutes: 5 } },
   });
   assert(r.status === 400 && r.data.fieldErrors?.consultationFeeRupees && r.data.fieldErrors?.bookingWindowDays && r.data.fieldErrors?.slotDurationMinutes,
     'Invalid fee / window / consultation length rejected', r.data);
@@ -143,7 +143,7 @@ async function run() {
     'Schedule API has fixed business hours and no notice / break / weekly hours', r.data);
 
   // --- New rules: 60-min consultations, 10-day window, ₹1,499 ---
-  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 60, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 } } });
+  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 60 } } });
   assert(r.status === 200 && r.data.rules.consultationFeePaise === 149900, 'Rules saved (fee stored in paise)', r.data);
 
   let availability = await publicAvailability();
@@ -216,7 +216,7 @@ async function run() {
   assert(r.status === 400, 'Past dates cannot be blocked');
 
   // --- Changing the consultation length keeps existing bookings ---
-  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 45, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 } } });
+  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 45 } } });
   assert(r.status === 200, 'Consultation length changed to 45 minutes');
   r = await api('/api/consultant/availability?days=10', { cookie: consultant });
   const kept = r.data.days.flatMap((d) => d.slots).find((s) => s.booking?.bookingId === paidBookingId);

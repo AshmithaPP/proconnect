@@ -16,7 +16,6 @@ export const metadata = {
 const BLOCKED_MESSAGES = {
   pending: 'We are already finding a new time for this booking. You will receive an email as soon as it is booked.',
   started: 'This consultation has already started or passed, so it can no longer be changed online.',
-  disabled: 'Online changes are not available for this booking. Please reply to your confirmation email.',
   limit_reached: 'This booking has already been changed the maximum number of times. Please reply to your confirmation email.',
   too_late: 'It is too close to the consultation to change it online. Please reply to your confirmation email.',
 };
@@ -56,8 +55,7 @@ export default async function CustomerReschedulePage({ searchParams }) {
                 <p className="reschedule-text">
                   Pick any open time below. Your payment carries over — nothing more to pay.
                   {context.changesLeft === 1 ? ' You can change it once more.' : ` You can change it ${context.changesLeft} more times.`}
-                  {context.rules.customerRescheduleCutoffHours > 0 &&
-                    ` Changes are possible up to ${context.rules.customerRescheduleCutoffHours} hours before the consultation.`}
+                  {` Changes are possible up to ${context.cutoffHours} hours before the consultation.`}
                 </p>
                 <CustomerReschedulePicker token={token} />
               </>

@@ -1,7 +1,7 @@
 import 'server-only';
 import pool from '@/lib/db';
 import { getBookingById } from '@/features/booking/booking.repository';
-import { loadAvailability, checkSlotBookable, getBookingRules, getBusinessTimezone } from '@/features/schedule/schedule.repository';
+import { loadAvailability, checkSlotBookable, getBusinessTimezone } from '@/features/schedule/schedule.repository';
 import { findNextAvailableSlot, getZonedNow, minutesToTime, timeToMinutes, parseSlotKey } from '@/features/schedule/slot-engine';
 import {
   lockBookingSlot,
@@ -12,6 +12,7 @@ import {
   findBookingIdByRescheduleToken,
 } from '@/features/reschedule/reschedule.repository';
 import { sendRescheduledEmails, sendReschedulePendingEmails } from '@/features/email/booking-emails';
+import { CUSTOMER_RESCHEDULE_CUTOFF_HOURS, MAX_CUSTOMER_RESCHEDULES } from '@/features/schedule/schedule.definitions';
 
 /** How far ahead an automatic move may look (beyond the customer booking window on purpose) */
 export const AUTO_RESCHEDULE_SEARCH_DAYS = 30;
@@ -133,7 +134,7 @@ export async function getCustomerRescheduleContext(rawToken) {
   const booking = await getBookingById(bookingId);
   if (!booking || booking.payment?.paymentStatus !== 'paid') return { ok: false, reason: 'invalid_link' };
 
-  const [rules, timezone, used] = await Promise.all([getBookingRules(), getBusinessTimezone(), countCustomerReschedules(bookingId)]);
+  const [timezone, used] = await Promise.all([getBusinessTimezone(), countCustomerReschedules(bookingId)]);
   const now = getZonedNow(timezone);
   const daysUntil = Math.round((Date.parse(`${booking.consultationDate}T00:00:00Z`) - Date.parse(`${now.date}T00:00:00Z`)) / 86400000);
   const minutesUntilStart = daysUntil * 1440 + timeToMinutes(booking.slotStartTime) - now.minutes;
@@ -141,16 +142,15 @@ export async function getCustomerRescheduleContext(rawToken) {
   let blockedReason = null;
   if (booking.bookingStatus === 'reschedule_required') blockedReason = 'pending';
   else if (minutesUntilStart <= 0) blockedReason = 'started';
-  else if (rules.maxCustomerReschedules === 0) blockedReason = 'disabled';
-  else if (used >= rules.maxCustomerReschedules) blockedReason = 'limit_reached';
-  else if (minutesUntilStart < rules.customerRescheduleCutoffHours * 60) blockedReason = 'too_late';
+  else if (used >= MAX_CUSTOMER_RESCHEDULES) blockedReason = 'limit_reached';
+  else if (minutesUntilStart < CUSTOMER_RESCHEDULE_CUTOFF_HOURS * 60) blockedReason = 'too_late';
 
   return {
     ok: true,
     booking,
-    rules,
+    cutoffHours: CUSTOMER_RESCHEDULE_CUTOFF_HOURS,
     changesUsed: used,
-    changesLeft: Math.max(rules.maxCustomerReschedules - used, 0),
+    changesLeft: Math.max(MAX_CUSTOMER_RESCHEDULES - used, 0),
     canReschedule: !blockedReason,
     blockedReason,
   };
@@ -169,9 +169,8 @@ export async function rescheduleByCustomer(rawToken, slotKey) {
     const messages = {
       pending: 'We are already finding a new time for this booking — you will receive an email shortly.',
       started: 'This consultation has already started or passed.',
-      disabled: 'Online changes are not available. Please reply to your confirmation email.',
       limit_reached: 'You have already changed this booking the maximum number of times. Please reply to your confirmation email.',
-      too_late: `Changes are possible up to ${context.rules.customerRescheduleCutoffHours} hours before the consultation. Please reply to your confirmation email.`,
+      too_late: `Changes are possible up to ${CUSTOMER_RESCHEDULE_CUTOFF_HOURS} hours before the consultation. Please reply to your confirmation email.`,
     };
     return { ok: false, status: 409, error: messages[context.blockedReason] };
   }

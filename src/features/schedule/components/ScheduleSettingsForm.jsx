@@ -10,7 +10,7 @@ import { timeToMinutes, formatTimeLabel } from '@/features/schedule/slot-engine'
 const DURATION_OPTIONS = [15, 20, 30, 45, 60, 90, 120];
 
 /**
- * Consultant schedule: fee, booking window, slot length and the customer change limits.
+ * Consultant schedule: fee, booking window and consultation length.
  * Business hours are fixed (same every day); days off are set on the Availability page.
  * Saves to PUT /api/consultant/schedule.
  *
@@ -21,8 +21,6 @@ export default function ScheduleSettingsForm({ initialRules, businessHours, time
     consultationFeeRupees: String(initialRules.consultationFeePaise / 100),
     bookingWindowDays: String(initialRules.bookingWindowDays),
     slotDurationMinutes: String(initialRules.slotDurationMinutes),
-    customerRescheduleCutoffHours: String(initialRules.customerRescheduleCutoffHours),
-    maxCustomerReschedules: String(initialRules.maxCustomerReschedules),
   });
   const [warning, setWarning] = React.useState('');
   const { submit, isSubmitting, status, fieldErrors } = useJsonSubmit();
@@ -48,8 +46,6 @@ export default function ScheduleSettingsForm({ initialRules, businessHours, time
           consultationFeeRupees: Number(rules.consultationFeeRupees),
           bookingWindowDays: Number(rules.bookingWindowDays),
           slotDurationMinutes: Number(rules.slotDurationMinutes),
-          customerRescheduleCutoffHours: Number(rules.customerRescheduleCutoffHours),
-          maxCustomerReschedules: Number(rules.maxCustomerReschedules),
         },
       },
       'Saved — customers see the change immediately'
@@ -104,36 +100,6 @@ export default function ScheduleSettingsForm({ initialRules, businessHours, time
           <strong>Hours:</strong> every day, {hoursText} ({timezone}). To take a day or time off, use{' '}
           <Link href={availabilityPath}>Availability</Link>.
         </p>
-      </section>
-
-      <section className="settings-card">
-        <h2 className="settings-card-title">Customer time changes</h2>
-        <p className="settings-card-subtitle">
-          Customers can move their own booking with the &ldquo;Choose another time&rdquo; link in their email. (If two customers pay for the same
-          slot, the second is moved to the next free slot automatically — that never counts here.)
-        </p>
-        <div className="settings-grid">
-          <FormField
-            name="customerRescheduleCutoffHours"
-            type="number"
-            label="Allow changes until (hours before)"
-            value={rules.customerRescheduleCutoffHours}
-            onChange={setRule}
-            error={fieldErrors.customerRescheduleCutoffHours}
-            hint="12 = no changes in the last 12 hours before the consultation. 0 = until it starts."
-            disabled={isSubmitting}
-          />
-          <FormField
-            name="maxCustomerReschedules"
-            type="number"
-            label="Changes allowed per booking"
-            value={rules.maxCustomerReschedules}
-            onChange={setRule}
-            error={fieldErrors.maxCustomerReschedules}
-            hint="How many times one customer may change their time. 0 = turned off."
-            disabled={isSubmitting}
-          />
-        </div>
       </section>
 
       <div className="settings-actions" style={{ marginTop: 0 }}>
