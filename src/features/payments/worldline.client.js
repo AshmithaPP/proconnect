@@ -22,6 +22,23 @@ let sdkClientInstance = null;
 const CAPTURED_PAYMENT_STATUSES = new Set(['CAPTURE_REQUESTED', 'CAPTURED', 'PAID']);
 
 /**
+ * The Worldline Connect API endpoints this app calls. The SDK builds these exact paths
+ * (see node_modules/connect-sdk-nodejs/lib/v1/...) on WORLDLINE_BASE_URL and signs them;
+ * they are listed here so every call (and every log line) shows which endpoint it hits.
+ */
+export const WORLDLINE_ENDPOINTS = {
+  createHostedCheckout: (merchantId) => `POST /v1/${merchantId}/hostedcheckouts`,
+  getHostedCheckout: (merchantId, hostedCheckoutId) => `GET /v1/${merchantId}/hostedcheckouts/${hostedCheckoutId}`,
+  approvePayment: (merchantId, paymentId) => `POST /v1/${merchantId}/payments/${paymentId}/approve`,
+};
+
+/** "POST https://api.preprod.connect.worldline-solutions.com/v1/…" — for logs */
+function describeEndpoint(endpoint) {
+  const [method, path] = endpoint.split(' ');
+  return `${method} ${getWorldlineConfig().baseUrl.replace(/\/+$/, '')}${path}`;
+}
+
+/**
  * Initializes and caches the official Worldline Connect SDK client.
  * 
  * @returns {import('connect-sdk-nodejs').Client}
@@ -153,16 +170,18 @@ export async function createHostedCheckoutSession({
   try {
     const client = getWorldlineClient();
 
-    // Call the official Worldline SDK: POST /v1/{merchantId}/hostedCheckouts
+    const endpoint = WORLDLINE_ENDPOINTS.createHostedCheckout(config.merchantId);
+    console.log(`[Worldline] → ${describeEndpoint(endpoint)}`);
     // SDK returns { status: <HTTP status>, body: <API response>, isSuccess }
     const sdkResponse = await client.v1.hostedcheckouts.create(config.merchantId, requestBody, null);
     const response = sdkResponse?.body;
+    console.log(`[Worldline] ← ${sdkResponse?.status} ${endpoint}`);
 
     // If Worldline rejected the request (non-2xx or no session ID)
     if (!sdkResponse?.isSuccess || !response?.hostedCheckoutId) {
       const err = response?.errors?.[0];
       const errMsg = err ? `${err.id}${err.propertyName ? ` (${err.propertyName})` : ''}: ${err.message}` : `HTTP ${sdkResponse?.status}`;
-      throw new Error(`Worldline rejected hosted checkout creation: ${errMsg}`);
+      throw new Error(`Worldline rejected ${endpoint}: ${errMsg}`);
     }
 
     // Worldline returns:
@@ -218,11 +237,13 @@ export async function getHostedCheckoutStatus(hostedCheckoutId) {
   const client = getWorldlineClient();
 
   try {
-    // Call official Worldline SDK: GET /v1/{merchantId}/hostedCheckouts/{hostedCheckoutId}
+    const endpoint = WORLDLINE_ENDPOINTS.getHostedCheckout(config.merchantId, hostedCheckoutId);
+    console.log(`[Worldline] → ${describeEndpoint(endpoint)}`);
     const sdkResponse = await client.v1.hostedcheckouts.get(config.merchantId, hostedCheckoutId, null);
+    console.log(`[Worldline] ← ${sdkResponse?.status} ${endpoint}`);
     if (!sdkResponse?.isSuccess) {
       const err = sdkResponse?.body?.errors?.[0];
-      throw new Error(`Worldline status lookup failed: ${err ? err.id : `HTTP ${sdkResponse?.status}`}`);
+      throw new Error(`Worldline rejected ${endpoint}: ${err ? err.id : `HTTP ${sdkResponse?.status}`}`);
     }
     const response = sdkResponse.body;
 
@@ -283,10 +304,13 @@ export async function capturePayment(paymentId, amountPaise) {
   const config = getWorldlineConfig();
   const client = getWorldlineClient();
 
+  const endpoint = WORLDLINE_ENDPOINTS.approvePayment(config.merchantId, paymentId);
+  console.log(`[Worldline] → ${describeEndpoint(endpoint)}`);
   const sdkResponse = await client.v1.payments.approve(config.merchantId, paymentId, { amount: amountPaise }, null);
+  console.log(`[Worldline] ← ${sdkResponse?.status} ${endpoint}`);
   if (!sdkResponse?.isSuccess) {
     const err = sdkResponse?.body?.errors?.[0];
-    throw new Error(`Worldline capture failed: ${err ? err.id : `HTTP ${sdkResponse?.status}`}`);
+    throw new Error(`Worldline rejected ${endpoint}: ${err ? err.id : `HTTP ${sdkResponse?.status}`}`);
   }
   const status = sdkResponse.body?.payment?.status;
   return { isPaid: CAPTURED_PAYMENT_STATUSES.has(status), status };
