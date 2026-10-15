@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
-import { verifyAdminApiSession } from '@/features/auth/api-guard';
+import { verifyPortalApiSession } from '@/features/auth/api-guard';
 import { listPaidBookings, getPaidBookingStats } from '@/features/booking/booking.repository';
 
 const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
 /**
- * GET /api/admin/bookings?page=1&pageSize=20
- * Admin-only: successfully paid & confirmed bookings (most recently paid first), plus KPI stats.
+ * GET /api/consultant/bookings?page=1&pageSize=20
+ * Consultant-only: successfully paid & confirmed bookings (most recently paid first), plus KPI stats.
  */
 export async function GET(request) {
-  const auth = await verifyAdminApiSession();
+  const auth = await verifyPortalApiSession('consultant');
   if (!auth.authorized) {
     return auth.response;
   }
@@ -29,7 +29,7 @@ export async function GET(request) {
       { status: 200, headers: NO_STORE }
     );
   } catch (err) {
-    console.error('Admin bookings list error:', err.message);
+    console.error('Consultant bookings list error:', err.message);
     return NextResponse.json(
       { error: 'Could not load bookings' },
       { status: 500, headers: { 'Cache-Control': 'no-store' } }

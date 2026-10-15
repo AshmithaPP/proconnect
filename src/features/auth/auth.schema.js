@@ -38,37 +38,38 @@ export function validateLoginInput(body) {
  * - Must begin with a single '/'
  * - Must NOT begin with '//' or '/\' (protocol-relative / Windows path bypass)
  * - Must not contain control characters or external schemes
- * - Defaults safely to '/admin/dashboard'
+ * - Falls back to `fallbackPath` (the portal's home page)
  * 
  * @param {string | null | undefined} returnTo
+ * @param {string} fallbackPath
  * @returns {string}
  */
-export function sanitizeReturnTo(returnTo) {
+export function sanitizeReturnTo(returnTo, fallbackPath) {
   if (!returnTo || typeof returnTo !== 'string') {
-    return '/admin/dashboard';
+    return fallbackPath;
   }
 
   const trimmed = returnTo.trim();
 
   // Must begin with a single forward slash, but not double slash or backslash
   if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
-    return '/admin/dashboard';
+    return fallbackPath;
   }
 
   // Reject dangerous characters or protocol injections
   if (/[\r\n\t\0]/.test(trimmed)) {
-    return '/admin/dashboard';
+    return fallbackPath;
   }
 
   try {
     // Resolve against dummy origin to verify pathname and origin retention
     const parsed = new URL(trimmed, 'https://localhost');
     if (parsed.origin !== 'https://localhost') {
-      return '/admin/dashboard';
+      return fallbackPath;
     }
 
     return parsed.pathname + parsed.search;
   } catch {
-    return '/admin/dashboard';
+    return fallbackPath;
   }
 }

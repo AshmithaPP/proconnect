@@ -1,15 +1,18 @@
 /**
  * End-to-end booking flow test.
- * Usage: npm run test:bookings  (or: node tests/e2e/bookings.test.js [baseUrl] [adminEmail] [adminPassword])
+ * Usage: npm run test:bookings  (or: node tests/e2e/bookings.test.js [baseUrl])
+ * Signs in to the consultant portal with a temporary consultant account (deleted at the end).
  */
 const BASE_URL = process.argv[2] || process.env.BASE_URL || 'http://localhost:3000';
-const ADMIN_EMAIL = process.argv[3] || 'admin@preconnect.com';
-const ADMIN_PASSWORD = process.argv[4] || 'Password@2026';
+const CONSULTANT_EMAIL = `portal.test.bookings.${Date.now()}@example.com`;
+const CONSULTANT_PASSWORD = `Test-${Date.now()}-pw`;
 const ORIGIN = new URL(BASE_URL).origin;
 const TEST_EMAIL_DOMAIN = '@acme.com';
 
 const { default: dotenv } = await import('dotenv');
 const { default: mysql } = await import('mysql2/promise');
+const { default: bcrypt } = await import('bcryptjs');
+const { randomUUID } = await import('crypto');
 dotenv.config({ path: '.env.local', quiet: true });
 const db = await mysql.createConnection({
   host: process.env.DB_HOST || 'localhost',
@@ -98,32 +101,37 @@ async function run() {
 
   // 6. Admin API requires auth
   {
-    const res = await fetch(`${BASE_URL}/api/admin/bookings`);
-    assert(res.status === 401, 'GET /api/admin/bookings without session returns 401');
+    const res = await fetch(`${BASE_URL}/api/consultant/bookings`);
+    assert(res.status === 401, 'GET /api/consultant/bookings without session returns 401');
   }
 
   // 7. Admin sees the paid booking
-  const { res: loginRes } = await post('/api/auth/login', { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+  await db.execute(
+    `INSERT INTO portal_users (portal_user_id, full_name, email, password_hash, user_role, account_status)
+     VALUES (?, 'Test Consultant', ?, ?, 'consultant', 'active')`,
+    [randomUUID(), CONSULTANT_EMAIL, await bcrypt.hash(CONSULTANT_PASSWORD, 10)]
+  );
+  const { res: loginRes } = await post('/api/auth/consultant/login', { email: CONSULTANT_EMAIL, password: CONSULTANT_PASSWORD });
   const cookie = (loginRes.headers.get('set-cookie') || '').split(';')[0];
-  assert(loginRes.status === 200 && cookie, 'Admin login succeeds');
+  assert(loginRes.status === 200 && cookie, 'Consultant login succeeds');
 
   {
-    const res = await fetch(`${BASE_URL}/api/admin/bookings`, { headers: { Cookie: cookie } });
+    const res = await fetch(`${BASE_URL}/api/consultant/bookings`, { headers: { Cookie: cookie } });
     const data = await res.json();
     assert(res.status === 200 && data.bookings.some((b) => b.bookingId === bookingId),
-      'Paid booking appears in admin bookings API', data);
+      'Paid booking appears in consultant bookings API', data);
     assert(data.bookings.every((b) => b.status === 'paid'),
-      'Admin bookings API returns only paid bookings', data.bookings.map((b) => b.status));
+      'Consultant bookings API returns only paid bookings', data.bookings.map((b) => b.status));
   }
 
   {
-    const res = await fetch(`${BASE_URL}/admin/dashboard`, { headers: { Cookie: cookie } });
+    const res = await fetch(`${BASE_URL}/consultant/dashboard`, { headers: { Cookie: cookie } });
     const html = await res.text();
     assert(res.status === 200 && html.includes('Consultation Bookings') && html.includes(bookingId.slice(0, 8)),
-      'Paid booking rendered on /admin/dashboard');
+      'Paid booking rendered on /consultant/dashboard');
   }
 
-  await post('/api/auth/logout', undefined, { Cookie: cookie });
+  await post('/api/auth/consultant/logout', undefined, { Cookie: cookie });
 }
 
 try {
@@ -135,6 +143,7 @@ try {
   const [result] = await db.execute(
     `DELETE FROM consultation_bookings WHERE work_email LIKE 'test.client+%${TEST_EMAIL_DOMAIN}'`
   );
+  await db.execute(`DELETE FROM portal_users WHERE email = ?`, [CONSULTANT_EMAIL]);
   await db.end();
   console.log(`\ncleanup: removed ${result.affectedRows} test bookings`);
   console.log(`RESULTS: ${passed} passed, ${failed} failed\n`);

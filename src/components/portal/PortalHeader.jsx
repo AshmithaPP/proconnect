@@ -3,22 +3,22 @@
 import React from 'react';
 import Link from 'next/link';
 import LogoutButton from '@/features/auth/components/LogoutButton';
+import { getPortal } from '@/features/auth/portals';
 
-export default function AdminHeader() {
+/**
+ * @param {{ portalKey: 'admin' | 'consultant', title?: string }} props
+ */
+export default function PortalHeader({ portalKey, title = 'Dashboard Overview' }) {
   return (
     <header className="admin-top-header">
       <div className="header-breadcrumbs">
-        <span className="crumb-root">Portal</span>
+        <span className="crumb-root">{getPortal(portalKey).label} Portal</span>
         <span className="crumb-sep">/</span>
-        <span className="crumb-active">Dashboard Overview</span>
+        <span className="crumb-active">{title}</span>
       </div>
 
       <div className="header-actions-row">
-        {/* Database Connected Pill */}
-        <div className="header-status-pill">
-          <span className="live-pulse-dot" />
-          <span>MySQL 8 Active</span>
-        </div>
+     
 
         {/* Public Website Link */}
         <Link
@@ -31,7 +31,7 @@ export default function AdminHeader() {
         </Link>
 
         {/* Top Header Sign Out */}
-        <LogoutButton />
+        <LogoutButton portalKey={portalKey} />
       </div>
     </header>
   );

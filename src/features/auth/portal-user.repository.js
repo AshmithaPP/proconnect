@@ -4,14 +4,14 @@ import { query } from '@/lib/db';
 import { calculateSlidingExpiry, calculateAbsoluteExpiry } from '@/features/auth/session';
 
 /**
- * Find active or inactive admin user by normalized email
- * @param {string} email 
+ * Find a portal account (any role, active or inactive) by normalized email
+ * @param {string} email
  * @returns {Promise<any | null>}
  */
-export async function findAdminByEmail(email) {
+export async function findPortalUserByEmail(email) {
   const rows = await query(
-    `SELECT admin_user_id, full_name, email, password_hash, account_status, created_at, last_login_at
-     FROM admin_users
+    `SELECT portal_user_id, full_name, email, password_hash, user_role, account_status, created_at, last_login_at
+     FROM portal_users
      WHERE email = ?
      LIMIT 1`,
     [email]
@@ -20,65 +20,89 @@ export async function findAdminByEmail(email) {
 }
 
 /**
- * Update the last_login_at timestamp for an admin
- * @param {number|string} adminUserId 
+ * Update the last_login_at timestamp for an account
+ * @param {string} portalUserId
  */
-export async function updateAdminLastLogin(adminUserId) {
+export async function updatePortalUserLastLogin(portalUserId) {
   await query(
-    `UPDATE admin_users SET last_login_at = NOW() WHERE admin_user_id = ?`,
-    [adminUserId]
+    `UPDATE portal_users SET last_login_at = NOW() WHERE portal_user_id = ?`,
+    [portalUserId]
   );
 }
 
 /**
+ * List accounts with a given role (no password hashes)
+ * @param {'platform_admin' | 'consultant'} userRole
+ */
+export async function listPortalUsersByRole(userRole) {
+  const rows = await query(
+    `SELECT portal_user_id, full_name, email, account_status, created_at, last_login_at
+     FROM portal_users
+     WHERE user_role = ?
+     ORDER BY created_at ASC`,
+    [userRole]
+  );
+  return rows.map((row) => ({
+    portalUserId: row.portal_user_id,
+    fullName: row.full_name,
+    email: row.email,
+    accountStatus: row.account_status,
+    createdAt: row.created_at,
+    lastLoginAt: row.last_login_at,
+  }));
+}
+
+/**
  * Store a new session record in MySQL with a dynamic UUID
- * @param {Object} params 
- * @param {string} params.adminUserId 
- * @param {string} params.sessionTokenHash 
+ * @param {Object} params
+ * @param {string} params.portalUserId
+ * @param {string} params.sessionTokenHash
  * @returns {Promise<string>} sessionId
  */
-export async function createAdminSession({ adminUserId, sessionTokenHash }) {
+export async function createPortalSession({ portalUserId, sessionTokenHash }) {
   const slidingExpiry = calculateSlidingExpiry();
   const absoluteExpiry = calculateAbsoluteExpiry();
   const sessionId = crypto.randomUUID();
 
   await query(
-    `INSERT INTO admin_sessions (session_id, admin_user_id, session_token_hash, expires_at, absolute_expires_at)
+    `INSERT INTO portal_sessions (session_id, portal_user_id, session_token_hash, expires_at, absolute_expires_at)
      VALUES (?, ?, ?, ?, ?)`,
-    [sessionId, adminUserId, sessionTokenHash, slidingExpiry, absoluteExpiry]
+    [sessionId, portalUserId, sessionTokenHash, slidingExpiry, absoluteExpiry]
   );
   return sessionId;
 }
 
 /**
- * Verify session token hash and fetch administrator profile in a single query
- * Rejects expired, revoked, or inactive accounts.
- * @param {string} sessionTokenHash 
- * @returns {Promise<{ session: any, admin: any } | null>}
+ * Verify a session token hash for ONE role and fetch the account in a single query.
+ * Rejects expired, revoked or inactive accounts, and sessions belonging to another role —
+ * an admin session can never open the consultant portal, and vice versa.
+ * @param {string} sessionTokenHash
+ * @param {'platform_admin' | 'consultant'} userRole
+ * @returns {Promise<{ session: any, user: any } | null>}
  */
-export async function findValidSession(sessionTokenHash) {
+export async function findValidSession(sessionTokenHash, userRole) {
   const rows = await query(
-    `SELECT 
+    `SELECT
        s.session_id,
-       s.admin_user_id,
        s.expires_at,
        s.absolute_expires_at,
        s.last_activity_at,
-       s.revoked_at,
-       u.admin_user_id,
+       u.portal_user_id,
        u.full_name,
        u.email,
+       u.user_role,
        u.account_status,
        u.last_login_at
-     FROM admin_sessions s
-     JOIN admin_users u ON s.admin_user_id = u.admin_user_id
+     FROM portal_sessions s
+     JOIN portal_users u ON s.portal_user_id = u.portal_user_id
      WHERE s.session_token_hash = ?
        AND s.revoked_at IS NULL
        AND s.expires_at > NOW()
        AND s.absolute_expires_at > NOW()
        AND u.account_status = 'active'
+       AND u.user_role = ?
      LIMIT 1`,
-    [sessionTokenHash]
+    [sessionTokenHash, userRole]
   );
 
   if (rows.length === 0) {
@@ -90,15 +114,16 @@ export async function findValidSession(sessionTokenHash) {
   return {
     session: {
       sessionId: row.session_id,
-      adminUserId: row.admin_user_id,
+      portalUserId: row.portal_user_id,
       expiresAt: row.expires_at,
       absoluteExpiresAt: row.absolute_expires_at,
       lastActivityAt: row.last_activity_at,
     },
-    admin: {
-      adminUserId: row.admin_user_id,
+    user: {
+      portalUserId: row.portal_user_id,
       fullName: row.full_name,
       email: row.email,
+      userRole: row.user_role,
       accountStatus: row.account_status,
       lastLoginAt: row.last_login_at,
     },
@@ -108,12 +133,12 @@ export async function findValidSession(sessionTokenHash) {
 /**
  * Extend sliding window expiration and record activity timestamp.
  * Keeps sliding expiration constrained by absolute_expires_at.
- * @param {string} sessionTokenHash 
+ * @param {string} sessionTokenHash
  */
 export async function touchSessionActivity(sessionTokenHash) {
   try {
     await query(
-      `UPDATE admin_sessions
+      `UPDATE portal_sessions
        SET last_activity_at = NOW(),
            expires_at = LEAST(DATE_ADD(NOW(), INTERVAL 7 DAY), absolute_expires_at)
        WHERE session_token_hash = ? AND revoked_at IS NULL`,
@@ -126,11 +151,11 @@ export async function touchSessionActivity(sessionTokenHash) {
 
 /**
  * Revoke an active session by setting revoked_at = NOW()
- * @param {string} sessionTokenHash 
+ * @param {string} sessionTokenHash
  */
 export async function revokeSession(sessionTokenHash) {
   await query(
-    `UPDATE admin_sessions SET revoked_at = NOW() WHERE session_token_hash = ?`,
+    `UPDATE portal_sessions SET revoked_at = NOW() WHERE session_token_hash = ?`,
     [sessionTokenHash]
   );
 }
@@ -141,7 +166,7 @@ export async function revokeSession(sessionTokenHash) {
 export async function purgeExpiredSessions() {
   try {
     await query(
-      `DELETE FROM admin_sessions
+      `DELETE FROM portal_sessions
        WHERE expires_at < NOW()
           OR absolute_expires_at < NOW()
           OR (revoked_at IS NOT NULL AND revoked_at < DATE_SUB(NOW(), INTERVAL 30 DAY))`

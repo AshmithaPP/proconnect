@@ -2,21 +2,26 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getPortal } from '@/features/auth/portals';
 
-export default function LogoutButton() {
+/**
+ * @param {{ portalKey: 'admin' | 'consultant' }} props
+ */
+export default function LogoutButton({ portalKey }) {
   const router = useRouter();
+  const portal = getPortal(portalKey);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await fetch('/api/auth/logout', {
+      await fetch(`/api/auth/${portal.portalKey}/logout`, {
         method: 'POST',
       });
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
-      router.push('/admin/login');
+      router.push(portal.loginPath);
       router.refresh();
     }
   };

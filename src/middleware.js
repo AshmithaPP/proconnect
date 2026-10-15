@@ -1,28 +1,37 @@
 import { NextResponse } from 'next/server';
+import { PORTALS } from '@/features/auth/portals';
 import { getSessionCookieName } from '@/features/auth/cookie';
 
 /**
- * Optimistic admin gate.
+ * Optimistic portal gate for /admin/* and /consultant/*.
  *
- * Only checks that a session cookie is present, so logged-out visitors are
- * redirected before any server rendering happens. It does NOT validate the
- * session — the database check in admin/dashboard/layout.jsx (requireAdmin)
- * and in each admin API route (verifyAdminApiSession) remains authoritative.
+ * Only checks that the portal's own session cookie is present, so logged-out visitors are
+ * redirected to the right login page before any server rendering happens. It does NOT
+ * validate the session or its role — PortalShell (requirePortalUser) and each portal API
+ * route (verifyPortalApiSession) remain authoritative.
  */
 export function middleware(request) {
   const { pathname } = request.nextUrl;
+  const portal = Object.values(PORTALS).find(
+    (p) => pathname === p.basePath || pathname.startsWith(`${p.basePath}/`)
+  );
 
-  if (pathname === '/admin/login') {
+  if (!portal || pathname === portal.loginPath) {
     return NextResponse.next();
   }
 
-  if (!request.cookies.has(getSessionCookieName())) {
-    return NextResponse.redirect(new URL('/admin/login', request.url));
+  // "/admin" and "/consultant" have no page of their own
+  if (pathname === portal.basePath) {
+    return NextResponse.redirect(new URL(portal.homePath, request.url));
+  }
+
+  if (!request.cookies.has(getSessionCookieName(portal.portalKey))) {
+    return NextResponse.redirect(new URL(portal.loginPath, request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/consultant/:path*'],
 };

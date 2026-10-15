@@ -3,9 +3,22 @@ import { cookies } from 'next/headers';
 import { verifyRequestOrigin } from '@/lib/security/origin';
 import { getSessionCookieName, getClearSessionCookieOptions } from '@/features/auth/cookie';
 import { hashSessionToken } from '@/features/auth/session';
-import { revokeSession } from '@/features/auth/admin-user.repository';
+import { revokeSession } from '@/features/auth/portal-user.repository';
+import { getPortal } from '@/features/auth/portals';
 
-export async function POST(request) {
+/** Resolves the [portal] segment; unknown portals 404. */
+async function resolvePortal(params) {
+  const { portal: portalKey } = await params;
+  return getPortal(portalKey);
+}
+
+/** POST /api/auth/{admin|consultant}/logout — ends only this portal's session. */
+export async function POST(request, { params }) {
+  const portal = await resolvePortal(params);
+  if (!portal) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  }
+
   // 1. Verify Origin / Referer
   const originCheck = verifyRequestOrigin(request);
   if (!originCheck.valid) {
@@ -17,7 +30,7 @@ export async function POST(request) {
 
   try {
     const cookieStore = await cookies();
-    const cookieName = getSessionCookieName();
+    const cookieName = getSessionCookieName(portal.portalKey);
     const sessionToken = cookieStore.get(cookieName)?.value;
 
     // 2. Invalidate server-side session in MySQL if token exists

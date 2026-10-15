@@ -3,9 +3,14 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MailIcon, LockIcon } from '@/components/ui/Icons';
+import { getPortal } from '@/features/auth/portals';
 
-export default function LoginForm() {
+/**
+ * @param {{ portalKey: 'admin' | 'consultant' }} props
+ */
+export default function LoginForm({ portalKey }) {
   const router = useRouter();
+  const portal = getPortal(portalKey);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +30,7 @@ export default function LoginForm() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(`/api/auth/${portal.portalKey}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -48,7 +53,7 @@ export default function LoginForm() {
       }
 
       // Login successful: perform clean client navigation to dashboard
-      router.push('/admin/dashboard');
+      router.push(portal.homePath);
       router.refresh();
     } catch {
       setErrorMessage('Network connection error. Please try again.');
@@ -59,9 +64,9 @@ export default function LoginForm() {
   return (
     <div className="admin-login-card">
       <div className="admin-login-head">
-        <div className="admin-badge">Admin Authentication</div>
+        <div className="admin-badge">{portal.label} Authentication</div>
         <h2>Sign In to ProConnect</h2>
-        <p>Enter your administrator credentials to access the management portal.</p>
+        <p>Enter your {portal.audience} credentials to access the {portal.label.toLowerCase()} portal.</p>
       </div>
 
       {errorMessage && (
@@ -86,7 +91,7 @@ export default function LoginForm() {
               className="form-control-pro"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@preconnect.com"
+              placeholder={`${portal.portalKey}@preconnect.com`}
               autoComplete="username"
               required
               disabled={isLoading}

@@ -1,16 +1,22 @@
 /**
  * Centralized Session Cookie Configuration
- * 
+ *
+ * One cookie per portal (see portals.js): "admin_session" / "consultant_session".
  * Rules:
- * - Production: uses prefix `__Host-admin_session` which mandates Secure=true, Path=/, and no Domain attribute.
- * - Development: uses `admin_session` to work reliably over localhost HTTP.
+ * - Production: uses prefix `__Host-` which mandates Secure=true, Path=/, and no Domain attribute.
+ * - Development: plain name to work reliably over localhost HTTP.
  */
+import { getPortal } from '@/features/auth/portals';
 
 const IS_PROD = process.env.NODE_ENV === 'production';
-const BASE_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'admin_session';
 
-export function getSessionCookieName() {
-  return IS_PROD ? `__Host-${BASE_COOKIE_NAME}` : BASE_COOKIE_NAME;
+/**
+ * @param {string} portalKey - "admin" | "consultant"
+ */
+export function getSessionCookieName(portalKey) {
+  const portal = getPortal(portalKey);
+  if (!portal) throw new Error(`Unknown portal "${portalKey}"`);
+  return IS_PROD ? `__Host-${portal.cookieBaseName}` : portal.cookieBaseName;
 }
 
 /**

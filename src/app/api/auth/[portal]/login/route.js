@@ -3,12 +3,33 @@ import { cookies } from 'next/headers';
 import { verifyRequestOrigin } from '@/lib/security/origin';
 import { validateLoginInput } from '@/features/auth/auth.schema';
 import { checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/lib/security/rate-limit';
-import { findAdminByEmail, updateAdminLastLogin, createAdminSession } from '@/features/auth/admin-user.repository';
+import { getPortal } from '@/features/auth/portals';
+import {
+  findPortalUserByEmail,
+  updatePortalUserLastLogin,
+  createPortalSession,
+} from '@/features/auth/portal-user.repository';
 import { verifyPassword } from '@/features/auth/password';
 import { generateSessionToken, hashSessionToken } from '@/features/auth/session';
 import { getSessionCookieName, getSessionCookieOptions } from '@/features/auth/cookie';
 
-export async function POST(request) {
+/** Resolves the [portal] segment; unknown portals 404. */
+async function resolvePortal(params) {
+  const { portal: portalKey } = await params;
+  return getPortal(portalKey);
+}
+
+/**
+ * POST /api/auth/{admin|consultant}/login
+ * Signs in to ONE portal. An account of the other role gets the same generic error as a
+ * wrong password, so the endpoint never reveals which emails exist in which portal.
+ */
+export async function POST(request, { params }) {
+  const portal = await resolvePortal(params);
+  if (!portal) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  }
+
   // 1. Verify Origin / Referer against Host to protect from CSRF
   const originCheck = verifyRequestOrigin(request);
   if (!originCheck.valid) {
@@ -22,7 +43,7 @@ export async function POST(request) {
   /*
   const forwardedFor = request.headers.get('x-forwarded-for');
   const clientIp = forwardedFor ? forwardedFor.split(',')[0].trim() : '127.0.0.1';
-  const rateLimitKey = `${clientIp}:login`;
+  const rateLimitKey = `${clientIp}:login:${portal.portalKey}`;
 
   // 3. Check Persistent Rate Limiting
   const rateStatus = await checkRateLimit(rateLimitKey, 'login');
@@ -65,13 +86,13 @@ export async function POST(request) {
   const { email, password } = validation;
 
   try {
-    // 5. Query Administrator Record
-    const admin = await findAdminByEmail(email);
+    // 5. Query Account Record
+    const account = await findPortalUserByEmail(email);
 
     // Generic error to prevent account enumeration
     const genericAuthError = 'Invalid email or password';
 
-    if (!admin) {
+    if (!account) {
       // await recordFailedAttempt(rateLimitKey, 'login');
       return NextResponse.json(
         { error: genericAuthError },
@@ -79,8 +100,8 @@ export async function POST(request) {
       );
     }
 
-    // 6. Check Account Status
-    if (admin.account_status !== 'active') {
+    // 6. Check Account Status and that the account belongs to THIS portal
+    if (account.account_status !== 'active' || account.user_role !== portal.userRole) {
       // await recordFailedAttempt(rateLimitKey, 'login');
       return NextResponse.json(
         { error: genericAuthError },
@@ -89,7 +110,7 @@ export async function POST(request) {
     }
 
     // 7. Verify Password Hash
-    const passwordMatch = await verifyPassword(password, admin.password_hash);
+    const passwordMatch = await verifyPassword(password, account.password_hash);
     if (!passwordMatch) {
       // await recordFailedAttempt(rateLimitKey, 'login');
       return NextResponse.json(
@@ -106,17 +127,17 @@ export async function POST(request) {
     const tokenHash = hashSessionToken(rawToken);
 
     // 10. Persist Session in MySQL
-    await createAdminSession({
-      adminUserId: admin.admin_user_id,
+    await createPortalSession({
+      portalUserId: account.portal_user_id,
       sessionTokenHash: tokenHash,
     });
 
     // 11. Update Last Login Timestamp
-    await updateAdminLastLogin(admin.admin_user_id);
+    await updatePortalUserLastLogin(account.portal_user_id);
 
     // 12. Set Secure HttpOnly Cookie
     const cookieStore = await cookies();
-    const cookieName = getSessionCookieName();
+    const cookieName = getSessionCookieName(portal.portalKey);
     const cookieOptions = getSessionCookieOptions();
 
     cookieStore.set(cookieName, rawToken, cookieOptions);
@@ -126,10 +147,12 @@ export async function POST(request) {
       {
         success: true,
         user: {
-          adminUserId: admin.admin_user_id,
-          fullName: admin.full_name,
-          email: admin.email,
+          portalUserId: account.portal_user_id,
+          fullName: account.full_name,
+          email: account.email,
+          userRole: account.user_role,
         },
+        redirectTo: portal.homePath,
       },
       {
         status: 200,
