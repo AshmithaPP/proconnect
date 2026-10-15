@@ -1,23 +1,28 @@
 import 'server-only';
 import crypto from 'crypto';
-import pool, { query } from '@/lib/db';
+import { query } from '@/lib/db';
 import { readStoredSetting, writeSetting, getSetting } from '@/features/settings/settings.repository';
 import { BOOKING_RULES_DEFAULTS } from '@/features/schedule/schedule.definitions';
-import { buildAvailability, addDays, getZonedNow } from '@/features/schedule/slot-engine';
+import { buildAvailability, addDays, getZonedNow, BUSINESS_HOURS } from '@/features/schedule/slot-engine';
 
 const BOOKING_RULES_KEY = 'booking_rules';
 
 /**
- * Booking rules set by the consultant (fee, window, notice, slot length, gap).
+ * Booking rules set by the consultant (fee, booking window, slot length, reschedule limits).
  * The fee falls back to CONSULTATION_FEE_PAISE from .env until the consultant saves one.
+ * Only known rules are returned (keys of settings that no longer exist are ignored).
  */
 export async function getBookingRules() {
   const envFee = Number(process.env.CONSULTATION_FEE_PAISE);
-  return {
+  const stored = await readStoredSetting(BOOKING_RULES_KEY);
+  const rules = {
     ...BOOKING_RULES_DEFAULTS,
     ...(Number.isInteger(envFee) && envFee > 0 ? { consultationFeePaise: envFee } : {}),
-    ...(await readStoredSetting(BOOKING_RULES_KEY)),
   };
+  for (const key of Object.keys(BOOKING_RULES_DEFAULTS)) {
+    if (stored[key] !== undefined) rules[key] = stored[key];
+  }
+  return rules;
 }
 
 /** @param {typeof BOOKING_RULES_DEFAULTS} rules - validated */
@@ -28,39 +33,6 @@ export async function saveBookingRules(rules, updatedByUserId) {
 /** Business timezone from Settings → General */
 export async function getBusinessTimezone() {
   return (await getSetting('general')).timezone || 'Asia/Kolkata';
-}
-
-/** @returns {Promise<Array<{ weekday: number, startTime: string, endTime: string }>>} */
-export async function listWeeklyHours() {
-  const rows = await query(
-    `SELECT weekday, TIME_FORMAT(start_time, '%H:%i') AS start_time, TIME_FORMAT(end_time, '%H:%i') AS end_time
-     FROM schedule_weekly_hours ORDER BY weekday, start_time`
-  );
-  return rows.map((row) => ({ weekday: Number(row.weekday), startTime: row.start_time, endTime: row.end_time }));
-}
-
-/**
- * Replace the whole weekly schedule atomically.
- * @param {Array<{ weekday: number, startTime: string, endTime: string }>} ranges - validated
- */
-export async function replaceWeeklyHours(ranges) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    await conn.execute('DELETE FROM schedule_weekly_hours');
-    for (const range of ranges) {
-      await conn.execute(
-        'INSERT INTO schedule_weekly_hours (weekly_hours_id, weekday, start_time, end_time) VALUES (?, ?, ?, ?)',
-        [crypto.randomUUID(), range.weekday, range.startTime, range.endTime]
-      );
-    }
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
 }
 
 /** Time off between two dates (inclusive) */
@@ -134,7 +106,7 @@ export async function listConfirmedBookingSlots(fromDate, toDate, conn) {
  *   Default: the customer booking window starting today.
  */
 export async function loadAvailability({ fromDate, days, conn } = {}) {
-  const [rules, weeklyHours, timezone] = await Promise.all([getBookingRules(), listWeeklyHours(), getBusinessTimezone()]);
+  const [rules, timezone] = await Promise.all([getBookingRules(), getBusinessTimezone()]);
   const startDate = fromDate || getZonedNow(timezone).date;
   const dayCount = days || rules.bookingWindowDays;
   const endDate = addDays(startDate, dayCount - 1);
@@ -146,8 +118,8 @@ export async function loadAvailability({ fromDate, days, conn } = {}) {
   return {
     rules,
     timezone,
-    weeklyHours,
-    days: buildAvailability({ rules, weeklyHours, timeOff, bookings, timezone, fromDate: startDate, days: dayCount }),
+    businessHours: BUSINESS_HOURS,
+    days: buildAvailability({ rules, timeOff, bookings, timezone, fromDate: startDate, days: dayCount }),
   };
 }
 

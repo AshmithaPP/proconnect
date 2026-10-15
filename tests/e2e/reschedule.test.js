@@ -2,12 +2,12 @@
  * Phase 5 — automatic rescheduling (no admin involved) + customer "choose another time" link.
  * Usage: npm run test:reschedule   (BASE_URL defaults to http://localhost:3000)
  *
- * Runs a local SMTP server to read the real emails (and the link inside them). The schedule,
+ * Runs a local SMTP server to read the real emails (and the link inside them). Booking rules,
  * SMTP settings and time off are snapshotted first and restored at the end.
  *
- * SAFETY: it works only in a 06:00–09:00 window (outside any real consultation hours), blocks
- * time RANGES there (never whole days), refuses to run if a real booking sits in that window,
- * and a guard restores + fails the run if any real booking changed.
+ * SAFETY: test bookings live on a day with no real bookings; "block everything" only blocks
+ * the OPEN stretches of time (real booked slots are never inside a blocked range, so they are
+ * never moved); a guard restores + fails the run if any real booking changed.
  */
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -26,6 +26,14 @@ const PASSWORD = `Test-${crypto.randomBytes(6).toString('hex')}`;
 const CONSULTANT_EMAIL = `${PREFIX}consultant.${stamp}@example.com`;
 const ADMIN_EMAIL = `${PREFIX}admin.${stamp}@example.com`;
 const SMTP_PORT = 2900 + Math.floor(Math.random() * 300);
+const RULES = (overrides = {}) => ({
+  consultationFeeRupees: 999,
+  bookingWindowDays: 10,
+  slotDurationMinutes: 60,
+  customerRescheduleCutoffHours: 0,
+  maxCustomerReschedules: 2,
+  ...overrides,
+});
 
 let passed = 0;
 let failed = 0;
@@ -79,11 +87,9 @@ const mailTo = (address, contains) => waitFor(() => inbox.find((m) => m.to.inclu
 const linkIn = (mail) => mail?.text.match(/booking\/reschedule\?token=([A-Za-z0-9_-]+)/)?.[1];
 
 // --- snapshots ---
-const [hoursSnapshot] = await db.query(`SELECT weekday, TIME_FORMAT(start_time, '%H:%i') s, TIME_FORMAT(end_time, '%H:%i') e FROM schedule_weekly_hours`);
 const [settingsSnapshot] = await db.query(`SELECT setting_key, CAST(setting_value AS CHAR) v, updated_by_user_id FROM site_settings WHERE setting_key IN ('booking_rules', 'smtp')`);
 const [timeOffSnapshot] = await db.query(`SELECT time_off_id FROM schedule_time_off`);
 const guard = await createRealDataGuard(db);
-const WINDOW = { startTime: '06:00', endTime: '09:00' };
 
 async function api(path, { method = 'GET', cookie, body } = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -152,6 +158,21 @@ async function markPaidCollision(bookingId) {
   await db.execute(`UPDATE consultation_bookings SET booking_status = 'reschedule_required', pending_reschedule_reason = 'slot_taken' WHERE booking_id = ?`, [bookingId]);
 }
 
+/** Contiguous stretches of OPEN slots in a consultant calendar day — safe to block (nothing booked inside) */
+function openStretches(day) {
+  const stretches = [];
+  let current = null;
+  for (const slot of day.slots.filter((s) => !s.outsideHours)) {
+    if (slot.status === 'available') {
+      if (current && current.endTime === slot.startTime) current.endTime = slot.endTime;
+      else stretches.push((current = { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime }));
+    } else {
+      current = null;
+    }
+  }
+  return stretches;
+}
+
 async function run() {
   console.log(`\nReschedule tests against ${BASE_URL} (mail sink on ${SMTP_PORT})\n`);
 
@@ -165,53 +186,46 @@ async function run() {
   const consultant = await login('consultant', CONSULTANT_EMAIL);
   const admin = await login('admin', ADMIN_EMAIL);
 
-  const todayUtc = new Date().toISOString().slice(0, 10);
-  const in32Days = new Date(Date.now() + 32 * 86400000).toISOString().slice(0, 10);
-  const realInWindow = await guard.realBookingsInWindow(todayUtc, in32Days, WINDOW.startTime, WINDOW.endTime);
-  if (realInWindow) throw new Error(`${realInWindow} real booking(s) fall in the 06:00–09:00 test window — refusing to run`);
-
-  // Deterministic schedule: every day 06:00–09:00 (a window no real booking uses), 60-min slots
-  let r = await api('/api/consultant/schedule', {
-    method: 'PUT', cookie: consultant,
-    body: {
-      rules: { consultationFeeRupees: 999, bookingWindowDays: 10, minNoticeMinutes: 0, slotDurationMinutes: 60, slotGapMinutes: 0, customerRescheduleCutoffHours: 0, maxCustomerReschedules: 2 },
-      weeklyHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, ...WINDOW })),
-    },
-  });
-  assert(r.status === 200, 'Test schedule saved', r.data);
+  // 60-min consultations (fewer slots), 10-day window
+  let r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: RULES() } });
+  assert(r.status === 200, 'Test rules saved', r.data);
   r = await api('/api/admin/settings/smtp', {
     method: 'PUT', cookie: admin,
     body: { isEnabled: true, host: '127.0.0.1', port: SMTP_PORT, security: 'none', username: '', fromName: 'ProConnect', fromEmail: 'bookings@example.com', replyToEmail: '' },
   });
   assert(r.status === 200, 'Email sending pointed at the local mail sink', r.data);
 
+  // A day with no real bookings at all
   const availability = (await api('/api/bookings/availability')).data;
-  const dayA = availability.days[2]; // day after tomorrow — clear of today's notice
-  const [slot9, slot10, slot11] = dayA.slots.map((s) => s.slotKey); // 06:00, 07:00, 08:00
+  let dayA = null;
+  for (const day of availability.days.slice(2)) {
+    if (!(await guard.realBookingsInWindow(day.date, day.date, '00:00', '23:59'))) {
+      dayA = day;
+      break;
+    }
+  }
+  if (!dayA) throw new Error('No day without real bookings in the window — refusing to run');
+  const [slot10, slot11, slot12] = dayA.slots.map((s) => s.slotKey); // 10:00, 11:00, 12:00
 
   // --- 1. Two payments, one slot: first keeps it, second is moved to the next free slot ---
-  const first = await createBooking(slot9, 'Anita');
-  const second = await createBooking(slot9, 'Bharat');
-  const third = await createBooking(slot9, 'Chitra');
+  const first = await createBooking(slot10, 'Anita');
+  const second = await createBooking(slot10, 'Bharat');
+  const third = await createBooking(slot10, 'Chitra');
   assert(first.status === 201 && second.status === 201 && third.status === 201, 'Three customers start booking the same slot (pending does not hold it)');
   await markPaidConfirmed(first.bookingId);
   await markPaidCollision(second.bookingId);
 
   r = await api('/consultant/dashboard/bookings', { cookie: consultant }); // any portal load retries waiting bookings
   let secondState = await bookingState(second.bookingId);
-  assert(secondState.booking_status === 'confirmed' && secondState.d === dayA.date && secondState.t === '07:00',
-    'Second payer was moved automatically to the next free slot (07:00 same day)', secondState);
-  assert((await bookingState(first.bookingId)).t === '06:00', 'First payer keeps the original slot');
+  assert(secondState.booking_status === 'confirmed' && secondState.d === dayA.date && secondState.t === '11:00',
+    'Second payer was moved automatically to the next free slot (11:00 same day)', secondState);
+  assert((await bookingState(first.bookingId)).t === '10:00', 'First payer keeps the original slot');
   let moves = await history(second.bookingId);
   assert(moves.length === 1 && moves[0].reschedule_reason === 'slot_taken' && moves[0].rescheduled_by === 'system', 'Move recorded as slot_taken by system', moves);
   assert(r.text.includes('Auto-moved'), 'Consultant bookings list shows the Auto-moved badge');
 
   const movedMail = await mailTo(second.workEmail, 'New time');
-  if (!movedMail) {
-    const [log] = await db.query('SELECT template_key, delivery_status, error_message FROM email_deliveries WHERE booking_id = ?', [second.bookingId]);
-    console.error('delivery log:', log, 'inbox:', inbox.map((m) => m.to));
-  }
-  assert(movedMail && movedMail.text.includes('Another client paid for your chosen time') && movedMail.text.includes('7:00 AM'),
+  assert(movedMail && movedMail.text.includes('Another client paid for your chosen time') && movedMail.text.includes('11:00 AM'),
     'Customer is emailed the new time and the reason', movedMail?.text.slice(0, 400));
   assert(await mailTo(CONSULTANT_EMAIL, 'A consultation has moved to a new time'), 'Consultant is emailed about the move');
   const firstLink = linkIn(movedMail);
@@ -224,15 +238,15 @@ async function run() {
   // --- 2. Three payments on one slot: each later one goes to the next still-free slot ---
   await markPaidCollision(third.bookingId);
   await api('/consultant/dashboard', { cookie: consultant });
-  assert((await bookingState(third.bookingId)).t === '08:00', 'Third payer skips the already-filled 07:00 and gets 08:00');
+  assert((await bookingState(third.bookingId)).t === '12:00', 'Third payer skips the already-filled 11:00 and gets 12:00');
 
   // --- 3. Consultant marks a booked slot unavailable → booking moved automatically ---
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '06:00', endTime: '07:00' } });
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '10:00', endTime: '11:00' } });
   assert(r.status === 409 && r.data.canAutoMove && r.data.clashingBookings[0].bookingId === first.bookingId, 'Blocking a booked slot asks for confirmation first', r.data);
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '06:00', endTime: '07:00', confirmMove: true } });
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '10:00', endTime: '11:00', confirmMove: true } });
   const firstState = await bookingState(first.bookingId);
-  assert(r.status === 201 && r.data.movedBookings[0].outcome === 'moved' && firstState.booking_status === 'confirmed' && firstState.d > dayA.date,
-    'Confirmed → booking moved to the next free slot (next day, since the rest of the day is full)', { response: r.data, firstState });
+  assert(r.status === 201 && r.data.movedBookings[0].outcome === 'moved' && firstState.booking_status === 'confirmed' && firstState.d === dayA.date && firstState.t === '14:00',
+    'Confirmed → booking moved to the next free slot (14:00 — skips the full morning and the 1–2 PM break)', { response: r.data, firstState });
   moves = await history(first.bookingId);
   assert(moves.at(-1)?.reschedule_reason === 'consultant_unavailable' && moves.at(-1)?.rescheduled_by === 'consultant', 'Recorded as consultant_unavailable');
   assert(await mailTo(first.workEmail, 'no longer available at your chosen time'), 'That customer is emailed the new time');
@@ -242,74 +256,70 @@ async function run() {
   assert(r.status === 200 && r.text.includes('Current booking') && r.text.includes('Pick any open time'), 'Customer link opens the change page');
   r = await api('/booking/reschedule?token=not-a-real-token-xxxxxxxxxxxx');
   assert(r.text.includes('invalid or has expired'), 'A wrong token shows "invalid or expired"');
-  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: 'not-a-real-token-xxxxxxxxxxxx', slotKey: slot9 } });
+  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: 'not-a-real-token-xxxxxxxxxxxx', slotKey: slot10 } });
   assert(r.status === 404, 'A wrong token cannot change anything');
 
-  const dayB = (await api('/api/bookings/availability')).data.days[5];
-  const target = dayB.slots.find((s) => s.status === 'available').slotKey;
-  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: slot11 } });
+  const later = (await api('/api/bookings/availability')).data.days.filter((d) => d.date > dayA.date);
+  const openLater = later.flatMap((d) => d.slots).filter((s) => s.status === 'available').map((s) => s.slotKey);
+  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: slot12 } });
   assert(r.status === 409, 'Customer cannot pick a slot that is already booked');
-  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: target } });
+  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: openLater[0] } });
   secondState = await bookingState(second.bookingId);
-  assert(r.status === 200 && `${secondState.d}T${secondState.t}` === target, 'Customer moved their booking to the time they chose', { response: r.data, secondState });
+  assert(r.status === 200 && `${secondState.d}T${secondState.t}` === openLater[0], 'Customer moved their booking to the time they chose', { response: r.data, secondState });
   assert((await history(second.bookingId)).at(-1)?.rescheduled_by === 'customer', 'Recorded as a customer change');
   assert(await mailTo(second.workEmail, 'moved to the time you chose'), 'Customer gets a confirmation of their change');
-  assert((await api('/api/bookings/availability')).data.days[2].slots.find((s) => s.slotKey === slot10).status === 'available',
+  assert((await api('/api/bookings/availability')).data.days.find((d) => d.date === dayA.date).slots.find((s) => s.slotKey === slot11).status === 'available',
     'Their old slot is free again for others');
 
-  const secondTarget = dayB.slots.filter((s) => s.status === 'available')[1].slotKey;
-  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: secondTarget } });
+  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: openLater[1] } });
   assert(r.status === 200, 'Second customer change allowed (automatic move did not count)');
-  const thirdTarget = (await api('/api/bookings/availability')).data.days[6].slots.find((s) => s.status === 'available').slotKey;
-  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: thirdTarget } });
+  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: firstLink, slotKey: openLater[2] } });
   assert(r.status === 409 && /maximum/.test(r.data.error), 'Third customer change refused (limit 2)', r.data);
 
   // Cut-off: changes only up to N hours before
-  await api('/api/consultant/schedule', {
-    method: 'PUT', cookie: consultant,
-    body: { rules: { consultationFeeRupees: 999, bookingWindowDays: 10, minNoticeMinutes: 0, slotDurationMinutes: 60, slotGapMinutes: 0, customerRescheduleCutoffHours: 168, maxCustomerReschedules: 5 } },
-  });
-  const chitraLinkMail = await mailTo(third.workEmail, 'New time');
-  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: linkIn(chitraLinkMail), slotKey: thirdTarget } });
+  await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: RULES({ customerRescheduleCutoffHours: 168, maxCustomerReschedules: 5 }) } });
+  const chitraMail = await mailTo(third.workEmail, 'New time');
+  r = await api('/api/bookings/reschedule', { method: 'POST', body: { token: linkIn(chitraMail), slotKey: openLater[2] } });
   assert(r.status === 409 && /hours before/.test(r.data.error), 'Change refused inside the cut-off window', r.data);
 
-  // --- 5a. Analytics counts the moves ---
+  // --- 4a. Analytics counts the moves ---
   r = await api('/api/consultant/analytics?range=7', { cookie: consultant });
   assert(r.data.kpis.slotTakenMoves >= 2 && r.data.kpis.unavailableMoves >= 1 && r.data.kpis.clientChangesInRange >= 2, 'Analytics counts automatic moves and client changes', r.data.kpis);
 
   // --- 5. No free slot in 30 days → waits, everyone told, then booked automatically ---
-  const lastDay = availability.days[0].date;
-  const days30 = Array.from({ length: 30 }, (_, i) => {
-    const d = new Date(`${lastDay}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + i);
-    return d.toISOString().slice(0, 10);
-  });
-  const dayC = days30[1]; // tomorrow
-  // Start this scenario clean: only the one booking that must wait
-  await db.execute(`DELETE FROM consultation_bookings WHERE work_email LIKE '${PREFIX}%@example.com'`);
-  const lonely = await createBooking((await api('/api/bookings/availability')).data.days[1].slots.find((s) => s.status === 'available').slotKey, 'Deepa');
+  await db.execute(`DELETE FROM consultation_bookings WHERE work_email LIKE '${PREFIX}%@example.com'`); // start clean
+  const lonelySlot = (await api('/api/bookings/availability')).data.days.find((d) => d.date === dayA.date).slots.find((s) => s.status === 'available').slotKey;
+  const lonely = await createBooking(lonelySlot, 'Deepa');
   await markPaidConfirmed(lonely.bookingId);
-  const blockIds = [];
-  for (const date of days30.filter((d) => d !== dayC)) {
-    // Block the test window only (never whole days), so real bookings are never in range
-    const res = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: date, ...WINDOW, confirmMove: true } });
-    if (res.data.timeOffId) blockIds.push(res.data.timeOffId);
+
+  // Block every OPEN stretch of time for the next 30 days (booked slots — real or the lonely one — are never inside)
+  const calendar = (await api('/api/consultant/availability?days=30', { cookie: consultant })).data;
+  const blocks = [];
+  for (const day of calendar.days) {
+    for (const stretch of openStretches(day)) {
+      const res = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: stretch });
+      if (res.status !== 201) throw new Error(`Could not block an open stretch: ${JSON.stringify(res.data)}`);
+      blocks.push({ ...stretch, timeOffId: res.data.timeOffId });
+    }
   }
   inbox.length = 0;
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC, ...WINDOW, confirmMove: true } });
-  assert(r.status === 201 && r.data.movedBookings.some((b) => b.bookingId === lonely.bookingId && b.outcome === 'pending'), 'With every slot blocked, the booking waits', r.data);
+  const lonelyStart = lonelySlot.split('T')[1];
+  const lonelyEnd = `${String(Number(lonelyStart.slice(0, 2)) + 1).padStart(2, '0')}:${lonelyStart.slice(3)}`;
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: lonelyStart, endTime: lonelyEnd, confirmMove: true } });
+  assert(r.status === 201 && r.data.movedBookings.some((b) => b.bookingId === lonely.bookingId && b.outcome === 'pending'), 'With every slot taken or blocked, the booking waits', r.data);
   assert((await bookingState(lonely.bookingId)).booking_status === 'reschedule_required', 'Status = waiting for a free slot');
   assert(await mailTo(lonely.workEmail, 'no free slot in the coming weeks'), 'Customer told it will be booked automatically');
   assert(await mailTo(CONSULTANT_EMAIL, 'needs a new time, but no slot is free'), 'Consultant alerted to open availability');
   r = await api('/consultant/dashboard/bookings?view=reschedule', { cookie: consultant });
   assert(r.text.includes('Waiting for a free slot') && r.text.includes('Deepa'), '"Needs reschedule" tab lists it as waiting');
 
-  r = await api(`/api/consultant/time-off/${blockIds.at(-1)}`, { method: 'DELETE', cookie: consultant });
+  const reopened = blocks.at(-1);
+  r = await api(`/api/consultant/time-off/${reopened.timeOffId}`, { method: 'DELETE', cookie: consultant });
   const lonelyState = await bookingState(lonely.bookingId);
-  assert(r.status === 200 && r.data.rescheduledWaitingBookings === 1 && lonelyState.booking_status === 'confirmed' && lonelyState.d === days30.at(-1) && lonelyState.t === '06:00',
-    'Reopening a day books the waiting customer automatically', { response: r.data, lonelyState });
+  assert(r.status === 200 && r.data.rescheduledWaitingBookings === 1 && lonelyState.booking_status === 'confirmed' &&
+    lonelyState.d === reopened.offDate && lonelyState.t === reopened.startTime,
+    'Reopening time books the waiting customer automatically', { response: r.data, lonelyState, reopened });
   assert(await mailTo(lonely.workEmail, 'New time'), 'And emails them the new time');
-
 }
 
 try {
@@ -326,10 +336,6 @@ try {
     console.log(`✓ PASS: none of the ${guard.realBookingCount} real bookings was touched`);
     passed++;
   }
-  await db.query('DELETE FROM schedule_weekly_hours');
-  for (const row of hoursSnapshot) {
-    await db.execute('INSERT INTO schedule_weekly_hours (weekly_hours_id, weekday, start_time, end_time) VALUES (UUID(), ?, ?, ?)', [row.weekday, row.s, row.e]);
-  }
   await db.query(`DELETE FROM site_settings WHERE setting_key IN ('booking_rules', 'smtp')`);
   for (const row of settingsSnapshot) {
     await db.execute('INSERT INTO site_settings (setting_key, setting_value, updated_by_user_id) VALUES (?, CAST(? AS JSON), ?)', [row.setting_key, row.v, row.updated_by_user_id]);
@@ -337,11 +343,12 @@ try {
   const keepIds = timeOffSnapshot.map((row) => row.time_off_id);
   await db.query(keepIds.length ? 'DELETE FROM schedule_time_off WHERE time_off_id NOT IN (?)' : 'DELETE FROM schedule_time_off', keepIds.length ? [keepIds] : []);
   await db.execute(`DELETE FROM email_deliveries WHERE recipient_email LIKE '${PREFIX}%@example.com'`);
+  await db.execute(`DELETE FROM email_deliveries WHERE booking_id IS NULL AND template_key LIKE 'booking_reschedul%' AND created_at >= NOW() - INTERVAL 1 HOUR`);
   const [bookings] = await db.execute(`DELETE FROM consultation_bookings WHERE work_email LIKE '${PREFIX}%@example.com'`);
   const [accounts] = await db.execute(`DELETE FROM portal_users WHERE email LIKE '${PREFIX}%@example.com'`);
   await db.end();
   await new Promise((resolve) => smtpServer.close(resolve));
-  console.log(`\ncleanup: schedule + SMTP restored, removed ${bookings.affectedRows} test bookings and ${accounts.affectedRows} accounts`);
+  console.log(`\ncleanup: rules + SMTP restored, removed ${bookings.affectedRows} test bookings and ${accounts.affectedRows} accounts`);
   console.log(`RESULTS: ${passed} passed, ${failed} failed\n`);
   process.exit(failed > 0 ? 1 : 0);
 }

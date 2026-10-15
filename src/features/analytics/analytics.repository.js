@@ -111,7 +111,7 @@ export async function getConsultantAnalytics({ rangeDays }) {
 
   // Consultation times: weekday × hour, for bookings paid in the range
   const heatmapCells = new Map();
-  const hours = new Set(availability.weeklyHours.flatMap((h) => {
+  const hours = new Set(availability.businessHours.flatMap((h) => {
     const list = [];
     for (let m = timeToMinutes(h.startTime); m < timeToMinutes(h.endTime); m += 60) list.push(Math.floor(m / 60));
     return list;

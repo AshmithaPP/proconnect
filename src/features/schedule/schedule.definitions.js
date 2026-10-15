@@ -1,14 +1,12 @@
 /**
- * Consultant-managed booking rules and weekly hours: defaults + validation.
+ * Consultant-managed booking rules: defaults + validation. (Business hours are fixed — see
+ * BUSINESS_HOURS in the slot engine.)
  * Client-safe — shared by the Schedule page and the API.
  */
-import { timeToMinutes } from '@/features/schedule/slot-engine';
 
 export const BOOKING_RULES_DEFAULTS = {
   bookingWindowDays: 7,
-  minNoticeMinutes: 60,
   slotDurationMinutes: 30,
-  slotGapMinutes: 0,
   consultationFeePaise: 99900,
   customerRescheduleCutoffHours: 12,
   maxCustomerReschedules: 2,
@@ -16,9 +14,7 @@ export const BOOKING_RULES_DEFAULTS = {
 
 export const BOOKING_RULE_LIMITS = {
   bookingWindowDays: { min: 1, max: 60, label: 'Booking window' },
-  minNoticeMinutes: { min: 0, max: 10080, label: 'Minimum notice' },
   slotDurationMinutes: { min: 15, max: 240, label: 'Slot length' },
-  slotGapMinutes: { min: 0, max: 120, label: 'Gap between slots' },
   customerRescheduleCutoffHours: { min: 0, max: 168, label: 'Change cut-off' },
   maxCustomerReschedules: { min: 0, max: 10, label: 'Changes allowed' },
 };
@@ -50,40 +46,4 @@ export function validateBookingRules(input) {
   value.consultationFeePaise = feePaise;
 
   return { value, fieldErrors };
-}
-
-const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-/**
- * Weekly hours: [{ weekday: 0-6, startTime: "HH:MM", endTime: "HH:MM" }, …]
- * Ranges on the same day must not overlap. A day without ranges is closed.
- * @returns {{ value: Array<{ weekday: number, startTime: string, endTime: string }>, error: string | null }}
- */
-export function validateWeeklyHours(input) {
-  if (!Array.isArray(input) || input.length > 70) return { value: [], error: 'Invalid weekly hours' };
-
-  const value = [];
-  for (const range of input) {
-    const weekday = Number(range?.weekday);
-    const startTime = String(range?.startTime || '');
-    const endTime = String(range?.endTime || '');
-    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) return { value: [], error: 'Invalid weekday' };
-    if (!TIME_REGEX.test(startTime) || !TIME_REGEX.test(endTime)) {
-      return { value: [], error: 'Times must be in HH:MM (24-hour) format' };
-    }
-    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-      return { value: [], error: 'Each end time must be after its start time' };
-    }
-    value.push({ weekday, startTime, endTime });
-  }
-
-  for (let weekday = 0; weekday <= 6; weekday++) {
-    const day = value.filter((r) => r.weekday === weekday).sort((a, b) => a.startTime.localeCompare(b.startTime));
-    for (let i = 1; i < day.length; i++) {
-      if (timeToMinutes(day[i].startTime) < timeToMinutes(day[i - 1].endTime)) {
-        return { value: [], error: 'Time ranges on the same day must not overlap' };
-      }
-    }
-  }
-  return { value, error: null };
 }

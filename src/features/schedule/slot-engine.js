@@ -7,8 +7,17 @@
  * Times are wall-clock in the business timezone: dates "YYYY-MM-DD", times "HH:MM".
  */
 
-/** @typedef {{ bookingWindowDays: number, minNoticeMinutes: number, slotDurationMinutes: number, slotGapMinutes: number }} BookingRules */
-/** @typedef {{ weekday: number, startTime: string, endTime: string }} WeeklyHours */
+/**
+ * Business hours — the same every day of the week. The 13:00–14:00 lunch break is simply not
+ * part of any range, so no slots are offered then. Days off are set as time off (Availability).
+ */
+export const BUSINESS_HOURS = [
+  { startTime: '10:00', endTime: '13:00' },
+  { startTime: '14:00', endTime: '22:00' },
+];
+
+/** @typedef {{ bookingWindowDays: number, slotDurationMinutes: number }} BookingRules */
+/** @typedef {{ startTime: string, endTime: string }} HoursRange */
 /** @typedef {{ timeOffId: string, offDate: string, startTime: string|null, endTime: string|null, timeOffReason?: string|null }} TimeOff */
 /** @typedef {{ bookingId: string, consultationDate: string, slotStartTime: string, slotEndTime: string, fullName?: string, companyName?: string }} BookedSlot */
 
@@ -102,30 +111,29 @@ const overlaps = (startA, endA, startB, endB) => startA < endB && startB < endA;
  *
  * Slot status (first match wins):
  *  - booked    → a confirmed booking overlaps it
- *  - past      → starts before now + minimum notice (today only)
+ *  - past      → already started (today) or an earlier day
  *  - blocked   → consultant time off (whole day or overlapping range)
  *  - available → can be booked
  *
- * @param {{ rules: BookingRules, weeklyHours: WeeklyHours[], timeOff: TimeOff[],
- *   bookings: BookedSlot[], timezone: string, now?: Date, fromDate?: string, days?: number }} input
+ * Slots run back to back from the start of each business-hours range.
+ *
+ * @param {{ rules: BookingRules, timeOff: TimeOff[], bookings: BookedSlot[], timezone: string,
+ *   now?: Date, fromDate?: string, days?: number, businessHours?: HoursRange[] }} input
  *   fromDate/days override the window (the consultant calendar can look further ahead).
  */
-export function buildAvailability({ rules, weeklyHours, timeOff, bookings, timezone, now = new Date(), fromDate, days }) {
+export function buildAvailability({ rules, timeOff, bookings, timezone, now = new Date(), fromDate, days, businessHours = BUSINESS_HOURS }) {
   const zonedNow = getZonedNow(timezone, now);
   const startDate = fromDate || zonedNow.date;
   const dayCount = days || rules.bookingWindowDays;
   const duration = rules.slotDurationMinutes;
-  const step = duration + rules.slotGapMinutes;
-  const earliestToday = zonedNow.minutes + rules.minNoticeMinutes;
+  const ranges = businessHours
+    .map((h) => ({ start: timeToMinutes(h.startTime), end: timeToMinutes(h.endTime) }))
+    .sort((a, b) => a.start - b.start);
 
   const result = [];
   for (let offset = 0; offset < dayCount; offset++) {
     const date = addDays(startDate, offset);
     const weekday = weekdayOf(date);
-    const ranges = weeklyHours
-      .filter((h) => h.weekday === weekday)
-      .map((h) => ({ start: timeToMinutes(h.startTime), end: timeToMinutes(h.endTime) }))
-      .sort((a, b) => a.start - b.start);
     const dayTimeOff = timeOff.filter((t) => t.offDate === date);
     const wholeDayOff = dayTimeOff.find((t) => !t.startTime);
     const dayBookings = bookings.filter((b) => b.consultationDate === date);
@@ -133,13 +141,13 @@ export function buildAvailability({ rules, weeklyHours, timeOff, bookings, timez
 
     const slots = [];
     for (const range of ranges) {
-      for (let start = range.start; start + duration <= range.end; start += step) {
+      for (let start = range.start; start + duration <= range.end; start += duration) {
         const end = start + duration;
         const booking = dayBookings.find((b) => overlaps(start, end, timeToMinutes(b.slotStartTime), timeToMinutes(b.slotEndTime)));
         const rangeOff = dayTimeOff.find(
           (t) => t.startTime && overlaps(start, end, timeToMinutes(t.startTime), timeToMinutes(t.endTime))
         );
-        const isPast = isPastDay || (date === zonedNow.date && start < earliestToday);
+        const isPast = isPastDay || (date === zonedNow.date && start <= zonedNow.minutes);
 
         let status = 'available';
         if (booking) status = 'booked';

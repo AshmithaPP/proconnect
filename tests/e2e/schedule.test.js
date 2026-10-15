@@ -1,14 +1,13 @@
 /**
- * Phase 3/4 — dynamic schedule: booking rules + fee, weekly hours, time off, dated bookings,
+ * Phase 3/4 — schedule: booking rules + fee, fixed business hours, time off, dated bookings,
  * consultant/admin workspace pages and analytics.
  * Usage: npm run test:schedule   (BASE_URL defaults to http://localhost:3000)
  *
- * The real schedule (weekly hours, booking rules, time off) is snapshotted first and restored
+ * The real booking rules and time off are snapshotted first and restored
  * at the end; test bookings and accounts are deleted.
  *
- * SAFETY: test slots live in 06:00–09:00 (outside real consultation hours), whole-day blocks
- * only use a day without real bookings, and a guard restores + fails the run if any real
- * booking changed.
+ * SAFETY: all test bookings and blocks happen on a day with no real bookings, and a guard
+ * restores + fails the run if any real booking changed.
  */
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -46,7 +45,6 @@ const db = await mysql.createConnection({
   database: process.env.DB_NAME || 'preconnect_db',
 });
 
-const [hoursSnapshot] = await db.query(`SELECT weekday, TIME_FORMAT(start_time, '%H:%i') s, TIME_FORMAT(end_time, '%H:%i') e FROM schedule_weekly_hours`);
 const [rulesSnapshot] = await db.query(`SELECT CAST(setting_value AS CHAR) v, updated_by_user_id FROM site_settings WHERE setting_key = 'booking_rules'`);
 const [timeOffSnapshot] = await db.query(`SELECT time_off_id FROM schedule_time_off`);
 const guard = await createRealDataGuard(db);
@@ -123,11 +121,11 @@ async function run() {
     ['/consultant/dashboard?range=7', consultant, /class="viz-segment active"[^>]*href="\/consultant\/dashboard\?range=7"/],
     ['/consultant/dashboard/bookings', consultant, 'Needs reschedule'],
     ['/consultant/dashboard/availability', consultant, 'Availability'],
-    ['/consultant/dashboard/schedule', consultant, 'Weekly hours'],
+    ['/consultant/dashboard/schedule', consultant, 'Consultation length'],
     ['/admin/dashboard', admin, 'Business analytics'],
     ['/admin/dashboard/bookings', admin, 'Needs reschedule'],
     ['/admin/dashboard/availability', admin, 'Availability'],
-    ['/admin/dashboard/schedule', admin, 'Weekly hours'],
+    ['/admin/dashboard/schedule', admin, 'Consultation length'],
   ]) {
     const r = await api(path, { cookie });
     assert(r.status === 200 && (marker instanceof RegExp ? marker.test(r.text) : r.text.includes(marker)), `${path} renders`, r.status);
@@ -136,47 +134,49 @@ async function run() {
   // --- Validation ---
   let r = await api('/api/consultant/schedule', {
     method: 'PUT', cookie: consultant,
-    body: { rules: { consultationFeeRupees: 0, bookingWindowDays: 0, minNoticeMinutes: 0, slotDurationMinutes: 5, slotGapMinutes: 0 } },
+    body: { rules: { consultationFeeRupees: 0, bookingWindowDays: 0, slotDurationMinutes: 5, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 } },
   });
   assert(r.status === 400 && r.data.fieldErrors?.consultationFeeRupees && r.data.fieldErrors?.bookingWindowDays && r.data.fieldErrors?.slotDurationMinutes,
-    'Invalid fee / window / slot length rejected', r.data);
-  r = await api('/api/consultant/schedule', {
-    method: 'PUT', cookie: consultant,
-    body: { weeklyHours: [{ weekday: 1, startTime: '10:00', endTime: '13:00' }, { weekday: 1, startTime: '12:00', endTime: '14:00' }] },
-  });
-  assert(r.status === 400 && /overlap/i.test(r.data.error), 'Overlapping weekly hours rejected', r.data);
+    'Invalid fee / window / consultation length rejected', r.data);
+  r = await api('/api/consultant/schedule', { cookie: consultant });
+  assert(r.data.businessHours?.length === 2 && !('minNoticeMinutes' in r.data.rules) && !('slotGapMinutes' in r.data.rules) && !('weeklyHours' in r.data),
+    'Schedule API has fixed business hours and no notice / break / weekly hours', r.data);
 
-  // --- New schedule: every day 06:00–09:00 (no real booking uses it), 60-min slots, 10-day window, ₹1,499 ---
-  r = await api('/api/consultant/schedule', {
-    method: 'PUT', cookie: consultant,
-    body: {
-      rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, minNoticeMinutes: 0, slotDurationMinutes: 60, slotGapMinutes: 0, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 },
-      weeklyHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: '06:00', endTime: '09:00' })),
-    },
-  });
-  assert(r.status === 200 && r.data.rules.consultationFeePaise === 149900, 'Schedule saved (fee stored in paise)', r.data);
+  // --- New rules: 60-min consultations, 10-day window, ₹1,499 ---
+  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 60, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 } } });
+  assert(r.status === 200 && r.data.rules.consultationFeePaise === 149900, 'Rules saved (fee stored in paise)', r.data);
 
   let availability = await publicAvailability();
   assert(availability.days.length === 10, 'Customers now see a 10-day window', availability.days.length);
-  assert(availability.fee.amountPaise === 149900 && availability.slotDurationMinutes === 60, 'Public availability shows the new fee and slot length');
-  const tomorrow = availability.days[1];
-  assert(tomorrow.slots.map((s) => s.label).join(' | ') === '6:00 AM – 7:00 AM | 7:00 AM – 8:00 AM | 8:00 AM – 9:00 AM',
-    'Slots are generated from the new weekly hours', tomorrow.slots.map((s) => s.label));
+  assert(availability.fee.amountPaise === 149900 && availability.slotDurationMinutes === 60, 'Public availability shows the new fee and length');
+  assert(availability.days.every((d) => !d.isClosed), 'Every day is open (no weekly closed days)');
   const home = await api('/');
-  assert(home.status === 200, 'Landing page renders with the new booking calendar');
+  assert(home.status === 200, 'Landing page renders with the booking calendar');
+
+  // Test bookings go on a day with no real bookings at all, so real customers are never involved
+  let dayC = null;
+  for (const day of availability.days.slice(1)) {
+    if (!(await guard.realBookingsInWindow(day.date, day.date, '00:00', '23:59'))) {
+      dayC = day;
+      break;
+    }
+  }
+  if (!dayC) throw new Error('No day without real bookings in the window — refusing to run');
+  assert(dayC.slots.map((s) => s.label).join(' | ') ===
+    '10:00 AM – 11:00 AM | 11:00 AM – 12:00 PM | 12:00 PM – 1:00 PM | 2:00 PM – 3:00 PM | 3:00 PM – 4:00 PM | 4:00 PM – 5:00 PM | 5:00 PM – 6:00 PM | 6:00 PM – 7:00 PM | 7:00 PM – 8:00 PM | 8:00 PM – 9:00 PM | 9:00 PM – 10:00 PM',
+    '60-min slots 10 AM–10 PM, none at 1–2 PM', dayC.slots.map((s) => s.label));
 
   // --- Booking uses the consultant's fee ---
-  const slotA = tomorrow.slots[0].slotKey;
+  const slotA = dayC.slots[0].slotKey;
   r = await api('/api/bookings', { method: 'POST', body: bookingBody(slotA) });
-  assert(r.status === 201 && r.data.booking.payment.amountPaise === 149900 && r.data.booking.consultationDate === tomorrow.date,
+  assert(r.status === 201 && r.data.booking.payment.amountPaise === 149900 && r.data.booking.consultationDate === dayC.date,
     'New booking is dated and charged the consultant fee', r.data);
 
   // --- Block one slot ---
-  const slotB = tomorrow.slots[1];
-  const [startTime] = slotB.slotKey.split('T')[1].split(' ');
+  const slotB = dayC.slots[1]; // 11:00–12:00
   r = await api('/api/consultant/time-off', {
     method: 'POST', cookie: consultant,
-    body: { offDate: tomorrow.date, startTime, endTime: `${String(Number(startTime.slice(0, 2)) + 1).padStart(2, '0')}:00`, timeOffReason: 'Dentist' },
+    body: { offDate: dayC.date, startTime: '11:00', endTime: '12:00', timeOffReason: 'Dentist' },
   });
   assert(r.status === 201 && r.data.timeOffId, 'Consultant blocks one slot', r.data);
   const slotOffId = r.data.timeOffId;
@@ -185,22 +185,13 @@ async function run() {
   assert(!JSON.stringify(availability).includes('Dentist'), 'Private block reason is not exposed publicly');
   r = await api('/api/bookings', { method: 'POST', body: bookingBody(slotB.slotKey) });
   assert(r.status === 409, 'Booking a blocked slot is rejected (409)', r.data);
-  r = await api(`/api/consultant/availability?days=10`, { cookie: consultant });
-  const consultantSlot = r.data.days[1].slots.find((s) => s.slotKey === slotB.slotKey);
+  r = await api('/api/consultant/availability?days=10', { cookie: consultant });
+  const consultantSlot = r.data.days.find((d) => d.date === dayC.date).slots.find((s) => s.slotKey === slotB.slotKey);
   assert(consultantSlot.status === 'blocked' && consultantSlot.timeOffId === slotOffId, 'Consultant calendar shows the block with its id');
   r = await api(`/api/consultant/time-off/${slotOffId}`, { method: 'DELETE', cookie: consultant });
   assert(r.status === 200 && findSlot((await publicAvailability()).days, slotB.slotKey).status === 'available', 'Unblocking reopens the slot');
 
   // --- Block a whole day (as admin) ---
-  // A day with no real bookings at all, so a whole-day block can never involve a real customer
-  let dayC = null;
-  for (const day of availability.days.slice(2)) {
-    if (!(await guard.realBookingsInWindow(day.date, day.date, '00:00', '23:59'))) {
-      dayC = day;
-      break;
-    }
-  }
-  if (!dayC) throw new Error('No day without real bookings in the window — refusing to block a whole day');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: admin, body: { offDate: dayC.date } });
   assert(r.status === 201, 'Admin marks a whole day unavailable');
   const dayOffId = r.data.timeOffId;
@@ -208,31 +199,28 @@ async function run() {
   const blockedDay = availability.days.find((d) => d.date === dayC.date);
   assert(blockedDay.isClosed && blockedDay.availableCount === 0, 'Whole day shows as closed to customers');
   await api(`/api/consultant/time-off/${dayOffId}`, { method: 'DELETE', cookie: admin });
-  assert((await publicAvailability()).days.find((d) => d.date === dayC.date).availableCount === 3, 'Day reopened');
+  assert((await publicAvailability()).days.find((d) => d.date === dayC.date).availableCount === 11, 'Day reopened (11 slots)');
 
-  // --- Paid bookings cannot be blocked ---
-  const paidSlot = dayC.slots[2].slotKey;
+  // --- A paid booking is never dropped by blocking ---
+  const paidSlot = dayC.slots[2].slotKey; // 12:00–13:00
   r = await api('/api/bookings', { method: 'POST', body: bookingBody(paidSlot) });
   const paidBookingId = r.data.booking?.bookingId;
   await db.execute(`UPDATE booking_payments SET payment_status = 'paid', paid_at = NOW(), provider_payment_id = ? WHERE booking_id = ?`, [`TEST_${stamp}`, paidBookingId]);
   await db.execute(`UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`, [paidBookingId]);
   assert(findSlot((await publicAvailability()).days, paidSlot).status === 'booked', 'Paid booking shows as booked');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date } });
-  assert(r.status === 409 && r.data.clashingBookings?.[0]?.bookingId === paidBookingId, 'Whole-day block refused when a paid booking exists', r.data);
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date, startTime: '08:00', endTime: '09:00' } });
-  assert(r.status === 409, 'Blocking the booked slot is refused');
+  assert(r.status === 409 && r.data.canAutoMove && r.data.clashingBookings?.[0]?.bookingId === paidBookingId, 'Whole-day block asks before moving a paid booking', r.data);
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date, startTime: '12:00', endTime: '13:00' } });
+  assert(r.status === 409, 'Blocking the booked slot asks first too');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: '2020-01-01' } });
   assert(r.status === 400, 'Past dates cannot be blocked');
 
-  // --- Schedule change that orphans a booking keeps it ---
-  r = await api('/api/consultant/schedule', {
-    method: 'PUT', cookie: consultant,
-    body: { weeklyHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: '06:00', endTime: '08:00' })) },
-  });
-  assert(r.status === 200 && r.data.bookingsOutsideHours >= 1, 'Shrinking hours reports the booking now outside hours', r.data.bookingsOutsideHours);
-  r = await api(`/api/consultant/availability?days=10`, { cookie: consultant });
-  const orphan = r.data.days.flatMap((d) => d.slots).find((s) => s.booking?.bookingId === paidBookingId);
-  assert(orphan?.outsideHours && orphan.status === 'booked', 'The booking is kept and still visible in the consultant calendar');
+  // --- Changing the consultation length keeps existing bookings ---
+  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 45, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 } } });
+  assert(r.status === 200, 'Consultation length changed to 45 minutes');
+  r = await api('/api/consultant/availability?days=10', { cookie: consultant });
+  const kept = r.data.days.flatMap((d) => d.slots).find((s) => s.booking?.bookingId === paidBookingId);
+  assert(kept?.status === 'booked', 'The paid booking is kept and still shown as booked');
 
   // --- Bookings views + analytics ---
   r = await api('/api/consultant/bookings?view=upcoming', { cookie: consultant });
@@ -262,11 +250,7 @@ try {
     console.log(`✓ PASS: none of the ${guard.realBookingCount} real bookings was touched`);
     passed++;
   }
-  // Restore the real schedule exactly
-  await db.query('DELETE FROM schedule_weekly_hours');
-  for (const row of hoursSnapshot) {
-    await db.execute('INSERT INTO schedule_weekly_hours (weekly_hours_id, weekday, start_time, end_time) VALUES (UUID(), ?, ?, ?)', [row.weekday, row.s, row.e]);
-  }
+  // Restore the real booking rules exactly
   await db.query(`DELETE FROM site_settings WHERE setting_key = 'booking_rules'`);
   for (const row of rulesSnapshot) {
     await db.execute(`INSERT INTO site_settings (setting_key, setting_value, updated_by_user_id) VALUES ('booking_rules', CAST(? AS JSON), ?)`, [row.v, row.updated_by_user_id]);

@@ -3,7 +3,8 @@ import { requirePortalUser } from '@/features/auth/require-portal-user';
 import BookingsManager from '@/features/booking/components/BookingsManager';
 import AvailabilityCalendar from '@/features/schedule/components/AvailabilityCalendar';
 import ScheduleSettingsForm from '@/features/schedule/components/ScheduleSettingsForm';
-import { getBookingRules, listWeeklyHours, getBusinessTimezone } from '@/features/schedule/schedule.repository';
+import { getBookingRules, getBusinessTimezone } from '@/features/schedule/schedule.repository';
+import { BUSINESS_HOURS } from '@/features/schedule/slot-engine';
 
 /*
  * Workspace pages shared by both portals (the platform admin has every consultant feature).
@@ -57,11 +58,16 @@ export async function AvailabilityPage({ portalKey }) {
 /** @param {{ portalKey: 'admin'|'consultant' }} props */
 export async function SchedulePage({ portalKey }) {
   await requirePortalUser(portalKey);
-  const [rules, weeklyHours, timezone] = await Promise.all([getBookingRules(), listWeeklyHours(), getBusinessTimezone()]);
+  const [rules, timezone] = await Promise.all([getBookingRules(), getBusinessTimezone()]);
   return (
     <div className="admin-dashboard-full">
-      <PageHead title="Schedule & Pricing" subtitle="Your fee, how far ahead customers can book, slot length and weekly working hours." />
-      <ScheduleSettingsForm initialRules={rules} initialWeeklyHours={weeklyHours} timezone={timezone} />
+      <PageHead title="Schedule & Pricing" subtitle="Your fee, how far ahead customers can book, and how long a consultation is." />
+      <ScheduleSettingsForm
+        initialRules={rules}
+        businessHours={BUSINESS_HOURS}
+        timezone={timezone}
+        availabilityPath={paths(portalKey).availability}
+      />
     </div>
   );
 }
