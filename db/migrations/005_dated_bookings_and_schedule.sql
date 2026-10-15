@@ -14,11 +14,11 @@ CREATE TABLE IF NOT EXISTS schedule_weekly_hours (
   INDEX idx_weekly_hours_weekday (weekday, start_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Same hours as the previous fixed slot list, Monday–Saturday (Sunday closed; editable)
+-- Default hours: 10:00–13:00 and 14:00–22:00 (1–2 PM break), Monday–Saturday (Sunday closed; editable)
 INSERT INTO schedule_weekly_hours (weekly_hours_id, weekday, start_time, end_time)
 SELECT UUID(), d.weekday, h.start_time, h.end_time
 FROM (SELECT 1 AS weekday UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6) d
-CROSS JOIN (SELECT '10:00:00' AS start_time, '13:00:00' AS end_time UNION ALL SELECT '14:00:00', '18:30:00') h
+CROSS JOIN (SELECT '10:00:00' AS start_time, '13:00:00' AS end_time UNION ALL SELECT '14:00:00', '22:00:00') h
 WHERE NOT EXISTS (SELECT 1 FROM schedule_weekly_hours);
 
 -- 2. Time off: a whole day (start/end NULL) or a time range on one date
