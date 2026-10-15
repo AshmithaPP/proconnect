@@ -8,6 +8,7 @@ import {
   getBusinessTimezone,
   loadAvailability,
 } from '@/features/schedule/schedule.repository';
+import { retryPendingReschedules } from '@/features/reschedule/reschedule.service';
 
 const PORTALS = ['consultant', 'admin'];
 
@@ -64,11 +65,13 @@ export async function PUT(request) {
   try {
     if (rules) await saveBookingRules(rules, auth.user.portalUserId);
     if (weeklyHours) await replaceWeeklyHours(weeklyHours);
+    // More (or different) slots may now exist for bookings waiting for a new time
+    const { moved: rescheduledWaitingBookings } = await retryPendingReschedules();
 
     const { days } = await loadAvailability({ days: 60 });
     const bookingsOutsideHours = days.flatMap((d) => d.slots).filter((s) => s.outsideHours).length;
 
-    return jsonNoStore({ success: true, ...(await readSchedule()), bookingsOutsideHours });
+    return jsonNoStore({ success: true, ...(await readSchedule()), bookingsOutsideHours, rescheduledWaitingBookings });
   } catch (err) {
     console.error('Schedule save error:', err.message);
     return jsonNoStore({ error: 'Could not save the schedule' }, 500);

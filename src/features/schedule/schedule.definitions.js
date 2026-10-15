@@ -10,6 +10,8 @@ export const BOOKING_RULES_DEFAULTS = {
   slotDurationMinutes: 30,
   slotGapMinutes: 0,
   consultationFeePaise: 99900,
+  customerRescheduleCutoffHours: 12,
+  maxCustomerReschedules: 2,
 };
 
 export const BOOKING_RULE_LIMITS = {
@@ -17,6 +19,8 @@ export const BOOKING_RULE_LIMITS = {
   minNoticeMinutes: { min: 0, max: 10080, label: 'Minimum notice' },
   slotDurationMinutes: { min: 15, max: 240, label: 'Slot length' },
   slotGapMinutes: { min: 0, max: 120, label: 'Gap between slots' },
+  customerRescheduleCutoffHours: { min: 0, max: 168, label: 'Change cut-off' },
+  maxCustomerReschedules: { min: 0, max: 10, label: 'Changes allowed' },
 };
 
 const MAX_FEE_PAISE = 10000000; // ₹1,00,000

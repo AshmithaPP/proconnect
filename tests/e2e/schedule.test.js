@@ -5,11 +5,16 @@
  *
  * The real schedule (weekly hours, booking rules, time off) is snapshotted first and restored
  * at the end; test bookings and accounts are deleted.
+ *
+ * SAFETY: test slots live in 06:00–09:00 (outside real consultation hours), whole-day blocks
+ * only use a day without real bookings, and a guard restores + fails the run if any real
+ * booking changed.
  */
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
+import { createRealDataGuard } from './helpers/real-data-guard.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -44,6 +49,7 @@ const db = await mysql.createConnection({
 const [hoursSnapshot] = await db.query(`SELECT weekday, TIME_FORMAT(start_time, '%H:%i') s, TIME_FORMAT(end_time, '%H:%i') e FROM schedule_weekly_hours`);
 const [rulesSnapshot] = await db.query(`SELECT CAST(setting_value AS CHAR) v, updated_by_user_id FROM site_settings WHERE setting_key = 'booking_rules'`);
 const [timeOffSnapshot] = await db.query(`SELECT time_off_id FROM schedule_time_off`);
+const guard = await createRealDataGuard(db);
 let consultantCookie = '';
 
 async function api(path, { method = 'GET', cookie, body } = {}) {
@@ -140,12 +146,12 @@ async function run() {
   });
   assert(r.status === 400 && /overlap/i.test(r.data.error), 'Overlapping weekly hours rejected', r.data);
 
-  // --- New schedule: every day 09:00–12:00, 60-min slots, 10-day window, ₹1,499 ---
+  // --- New schedule: every day 06:00–09:00 (no real booking uses it), 60-min slots, 10-day window, ₹1,499 ---
   r = await api('/api/consultant/schedule', {
     method: 'PUT', cookie: consultant,
     body: {
-      rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, minNoticeMinutes: 0, slotDurationMinutes: 60, slotGapMinutes: 0 },
-      weeklyHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: '09:00', endTime: '12:00' })),
+      rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, minNoticeMinutes: 0, slotDurationMinutes: 60, slotGapMinutes: 0, customerRescheduleCutoffHours: 12, maxCustomerReschedules: 2 },
+      weeklyHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: '06:00', endTime: '09:00' })),
     },
   });
   assert(r.status === 200 && r.data.rules.consultationFeePaise === 149900, 'Schedule saved (fee stored in paise)', r.data);
@@ -154,7 +160,7 @@ async function run() {
   assert(availability.days.length === 10, 'Customers now see a 10-day window', availability.days.length);
   assert(availability.fee.amountPaise === 149900 && availability.slotDurationMinutes === 60, 'Public availability shows the new fee and slot length');
   const tomorrow = availability.days[1];
-  assert(tomorrow.slots.map((s) => s.label).join(' | ') === '9:00 AM – 10:00 AM | 10:00 AM – 11:00 AM | 11:00 AM – 12:00 PM',
+  assert(tomorrow.slots.map((s) => s.label).join(' | ') === '6:00 AM – 7:00 AM | 7:00 AM – 8:00 AM | 8:00 AM – 9:00 AM',
     'Slots are generated from the new weekly hours', tomorrow.slots.map((s) => s.label));
   const home = await api('/');
   assert(home.status === 200, 'Landing page renders with the new booking calendar');
@@ -186,7 +192,15 @@ async function run() {
   assert(r.status === 200 && findSlot((await publicAvailability()).days, slotB.slotKey).status === 'available', 'Unblocking reopens the slot');
 
   // --- Block a whole day (as admin) ---
-  const dayC = availability.days[2];
+  // A day with no real bookings at all, so a whole-day block can never involve a real customer
+  let dayC = null;
+  for (const day of availability.days.slice(2)) {
+    if (!(await guard.realBookingsInWindow(day.date, day.date, '00:00', '23:59'))) {
+      dayC = day;
+      break;
+    }
+  }
+  if (!dayC) throw new Error('No day without real bookings in the window — refusing to block a whole day');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: admin, body: { offDate: dayC.date } });
   assert(r.status === 201, 'Admin marks a whole day unavailable');
   const dayOffId = r.data.timeOffId;
@@ -205,7 +219,7 @@ async function run() {
   assert(findSlot((await publicAvailability()).days, paidSlot).status === 'booked', 'Paid booking shows as booked');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date } });
   assert(r.status === 409 && r.data.clashingBookings?.[0]?.bookingId === paidBookingId, 'Whole-day block refused when a paid booking exists', r.data);
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date, startTime: '11:00', endTime: '12:00' } });
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date, startTime: '08:00', endTime: '09:00' } });
   assert(r.status === 409, 'Blocking the booked slot is refused');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: '2020-01-01' } });
   assert(r.status === 400, 'Past dates cannot be blocked');
@@ -213,7 +227,7 @@ async function run() {
   // --- Schedule change that orphans a booking keeps it ---
   r = await api('/api/consultant/schedule', {
     method: 'PUT', cookie: consultant,
-    body: { weeklyHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: '09:00', endTime: '11:00' })) },
+    body: { weeklyHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, startTime: '06:00', endTime: '08:00' })) },
   });
   assert(r.status === 200 && r.data.bookingsOutsideHours >= 1, 'Shrinking hours reports the booking now outside hours', r.data.bookingsOutsideHours);
   r = await api(`/api/consultant/availability?days=10`, { cookie: consultant });
@@ -240,6 +254,14 @@ try {
   console.error('Test run crashed:', err);
   failed++;
 } finally {
+  const changedReal = await guard.verifyAndRestore();
+  if (changedReal.length) {
+    console.error(`✗ FAIL: test changed ${changedReal.length} REAL booking(s) — restored:`, changedReal);
+    failed++;
+  } else {
+    console.log(`✓ PASS: none of the ${guard.realBookingCount} real bookings was touched`);
+    passed++;
+  }
   // Restore the real schedule exactly
   await db.query('DELETE FROM schedule_weekly_hours');
   for (const row of hoursSnapshot) {

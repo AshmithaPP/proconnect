@@ -32,6 +32,7 @@ export default function FormSelectField({
           value={value}
           onChange={onChange}
           required={required}
+          suppressHydrationWarning
         >
           <option value="" disabled>
             Select
@@ -57,6 +58,7 @@ export default function FormSelectField({
             onChange={onChange}
             placeholder={otherField.placeholder}
             autoFocus
+            suppressHydrationWarning
           />
         </div>
       )}

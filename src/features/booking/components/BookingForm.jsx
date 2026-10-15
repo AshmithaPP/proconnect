@@ -127,11 +127,8 @@ export default function BookingForm({ onSuccess }) {
           }}
         />
 
-        {/* Preferred Time Slot */}
+        {/* Preferred Date & Time Selector */}
         <div className="col-full">
-          <label className="field-label">
-            Preferred Date &amp; Time <span className="req">*</span>
-          </label>
           <SlotCalendarPicker
             days={availability.days}
             selectedDate={selectedDate}
@@ -153,6 +150,7 @@ export default function BookingForm({ onSuccess }) {
           type="submit"
           className="btn-pro btn-orange w-100 justify-content-center"
           disabled={isSubmitting}
+          suppressHydrationWarning
           style={{
             fontSize: '1rem',
             padding: '15px 28px',

@@ -2,6 +2,7 @@ import 'server-only';
 import { markBookingPaymentSucceeded, markBookingCancelled } from '@/features/booking/booking.repository';
 import { getHostedCheckoutStatus, capturePayment } from '@/features/payments/worldline.client';
 import { sendBookingConfirmationEmails } from '@/features/email/booking-emails';
+import { autoRescheduleBooking } from '@/features/reschedule/reschedule.service';
 
 /**
  * Brings a booking in line with what Worldline says about its hosted checkout.
@@ -9,7 +10,7 @@ import { sendBookingConfirmationEmails } from '@/features/email/booking-emails';
  *
  * @param {object} booking - from getBookingByProviderOrderId / getBookingById
  * @returns {Promise<{
- *   outcome: 'paid' | 'reschedule_required' | 'cancelled' | 'failed' | 'processing' | 'amount_mismatch' | 'booking_cancelled',
+ *   outcome: 'paid' | 'rescheduled' | 'reschedule_required' | 'cancelled' | 'failed' | 'processing' | 'amount_mismatch' | 'booking_cancelled',
  *   paymentId?: string,
  *   reason?: string
  * }>}
@@ -72,8 +73,10 @@ export async function reconcileWorldlineBooking(booking) {
       void sendBookingConfirmationEmails(bookingId);
     }
     if (result.outcome === 'paid_needs_reschedule') {
-      console.warn('[Worldline] Paid booking lost its slot to a concurrent payment — reschedule required:', bookingId);
-      return { outcome: 'reschedule_required', paymentId: verification.paymentId || '' };
+      // Someone else paid for this slot first: move this booking to the next free slot right
+      // away (the customer is emailed the new time) — no admin involved
+      const moved = await autoRescheduleBooking(bookingId, { reason: 'slot_taken' });
+      return { outcome: moved.outcome === 'moved' ? 'rescheduled' : 'reschedule_required', paymentId: verification.paymentId || '' };
     }
     return { outcome: 'paid', paymentId: verification.paymentId || '' };
   }

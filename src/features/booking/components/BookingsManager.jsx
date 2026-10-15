@@ -2,7 +2,9 @@ import React from 'react';
 import Link from 'next/link';
 import { listBookingsForView, getBookingViewCounts, BOOKING_VIEW_KEYS } from '@/features/booking/booking.repository';
 import { getBusinessTimezone } from '@/features/schedule/schedule.repository';
-import { getZonedNow, formatDateLabel } from '@/features/schedule/slot-engine';
+import { getZonedNow, formatDateLabel, formatSlotLabel } from '@/features/schedule/slot-engine';
+import { getRescheduleSummaries } from '@/features/reschedule/reschedule.repository';
+import { retryPendingReschedules } from '@/features/reschedule/reschedule.service';
 import { formatAmount } from '@/features/payments/format-amount';
 
 const PAGE_SIZE = 20;
@@ -11,7 +13,13 @@ const VIEWS = {
   upcoming: { label: 'Upcoming', empty: 'No upcoming consultations.' },
   today: { label: 'Today', empty: 'No consultations today.' },
   past: { label: 'Past', empty: 'No past consultations yet.' },
-  reschedule: { label: 'Needs reschedule', empty: 'No paid booking is waiting for a new time.' },
+  reschedule: { label: 'Needs reschedule', empty: 'Nothing waiting — every paid booking has a time. (Bookings are moved automatically; this list only shows the rare case where no slot is free in the next 30 days.)' },
+};
+
+const MOVE_LABELS = {
+  slot_taken: 'Auto-moved · slot was taken',
+  consultant_unavailable: 'Auto-moved · you were unavailable',
+  customer_request: 'Changed by the client',
 };
 
 function formatDateTime(value, timezone) {
@@ -34,6 +42,8 @@ export default async function BookingsManager({ basePath, view: requestedView, p
   const view = BOOKING_VIEW_KEYS.includes(requestedView) ? requestedView : 'upcoming';
   const search = typeof q === 'string' ? q.trim().slice(0, 100) : '';
   const currentPage = Math.max(Number(page) || 1, 1);
+  // Bookings waiting for a free slot are retried first, so this page never shows stale ones
+  await retryPendingReschedules();
   const timezone = await getBusinessTimezone();
   const today = getZonedNow(timezone).date;
 
@@ -42,6 +52,7 @@ export default async function BookingsManager({ basePath, view: requestedView, p
     getBookingViewCounts(today),
   ]);
   const totalPages = Math.max(Math.ceil(totalCount / PAGE_SIZE), 1);
+  const moves = await getRescheduleSummaries(bookings.map((b) => b.bookingId));
 
   const href = (params) => {
     const query = new URLSearchParams();
@@ -107,7 +118,25 @@ export default async function BookingsManager({ basePath, view: requestedView, p
                       {booking.consultationDate === today ? 'Today' : formatDateLabel(booking.consultationDate)}
                     </span>
                     <span className="cell-secondary">{booking.preferredTimeSlot}</span>
-                    {booking.status === 'reschedule_required' && <span className="status-chip warn">Needs new time</span>}
+                    {booking.status === 'reschedule_required' && (
+                      <span className="status-chip warn" title="No free slot in the next 30 days yet — it is booked automatically as soon as one opens">
+                        Waiting for a free slot
+                      </span>
+                    )}
+                    {moves.has(booking.bookingId) && (
+                      <span
+                        className={`status-chip ${moves.get(booking.bookingId).reason === 'customer_request' ? 'muted' : 'ok'}`}
+                        title={`Originally ${formatDateLabel(moves.get(booking.bookingId).firstPrevious.date)}, ${formatSlotLabel(moves.get(booking.bookingId).firstPrevious.startTime, moves.get(booking.bookingId).firstPrevious.endTime)} · moved ${moves.get(booking.bookingId).moveCount}×`}
+                      >
+                        {MOVE_LABELS[moves.get(booking.bookingId).reason]}
+                      </span>
+                    )}
+                    {moves.has(booking.bookingId) && (
+                      <span className="cell-secondary cell-strike">
+                        was {formatDateLabel(moves.get(booking.bookingId).previous.date, { withYear: false })},{' '}
+                        {formatSlotLabel(moves.get(booking.bookingId).previous.startTime, moves.get(booking.bookingId).previous.endTime).split(' – ')[0]}
+                      </span>
+                    )}
                   </td>
                   <td>
                     <div className="cell-primary">{booking.fullName}</div>

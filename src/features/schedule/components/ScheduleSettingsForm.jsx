@@ -35,6 +35,8 @@ export default function ScheduleSettingsForm({ initialRules, initialWeeklyHours,
     minNoticeMinutes: String(initialRules.minNoticeMinutes),
     slotDurationMinutes: String(initialRules.slotDurationMinutes),
     slotGapMinutes: String(initialRules.slotGapMinutes),
+    customerRescheduleCutoffHours: String(initialRules.customerRescheduleCutoffHours),
+    maxCustomerReschedules: String(initialRules.maxCustomerReschedules),
   });
   const [hours, setHours] = useState(() =>
     Object.fromEntries(WEEK_ORDER.map((weekday) => [weekday, initialWeeklyHours.filter((h) => h.weekday === weekday).map(({ startTime, endTime }) => ({ startTime, endTime }))]))
@@ -76,6 +78,8 @@ export default function ScheduleSettingsForm({ initialRules, initialWeeklyHours,
           minNoticeMinutes: Number(rules.minNoticeMinutes),
           slotDurationMinutes: Number(rules.slotDurationMinutes),
           slotGapMinutes: Number(rules.slotGapMinutes),
+          customerRescheduleCutoffHours: Number(rules.customerRescheduleCutoffHours),
+          maxCustomerReschedules: Number(rules.maxCustomerReschedules),
         },
         weeklyHours,
       },
@@ -144,6 +148,37 @@ export default function ScheduleSettingsForm({ initialRules, initialWeeklyHours,
             onChange={setRule}
             error={fieldErrors.minNoticeMinutes}
             hint="How soon before a slot it can still be booked."
+            disabled={isSubmitting}
+          />
+        </div>
+      </section>
+
+      <section className="settings-card">
+        <h2 className="settings-card-title">Rescheduling</h2>
+        <p className="settings-card-subtitle">
+          Fully automatic. If two customers pay for the same slot, the first keeps it and the other is moved to the next free slot and emailed. When
+          you mark a booked slot unavailable, its booking is moved the same way. Customers can also pick another time themselves from the link in
+          their email, within these limits:
+        </p>
+        <div className="settings-grid">
+          <FormField
+            name="customerRescheduleCutoffHours"
+            type="number"
+            label="Customers can change until (hours before)"
+            value={rules.customerRescheduleCutoffHours}
+            onChange={setRule}
+            error={fieldErrors.customerRescheduleCutoffHours}
+            hint="0 = up to the start time."
+            disabled={isSubmitting}
+          />
+          <FormField
+            name="maxCustomerReschedules"
+            type="number"
+            label="Changes allowed per booking"
+            value={rules.maxCustomerReschedules}
+            onChange={setRule}
+            error={fieldErrors.maxCustomerReschedules}
+            hint="0 turns off customer changes. Automatic moves never count."
             disabled={isSubmitting}
           />
         </div>

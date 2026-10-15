@@ -51,11 +51,11 @@ export default async function RootLayout({ children }) {
   const analyticsId = seo.googleAnalyticsId;
 
   return (
-    <html lang="en" className={poppins.variable}>
+    <html lang="en" className={poppins.variable} suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
-      <body style={{ fontFamily: 'var(--font-poppins), sans-serif' }}>
+      <body style={{ fontFamily: 'var(--font-poppins), sans-serif' }} suppressHydrationWarning>
         {children}
         {analyticsId && (
           <>

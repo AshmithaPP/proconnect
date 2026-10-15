@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getConsultantAnalytics, ANALYTICS_RANGES } from '@/features/analytics/analytics.repository';
 import { formatAmount } from '@/features/payments/format-amount';
 import { ColumnChart, BarList, Heatmap, Funnel } from '@/features/analytics/components/charts';
+import { retryPendingReschedules } from '@/features/reschedule/reschedule.service';
 
 /** Signed change vs last month with a direction icon (never colour alone) */
 function Delta({ percent }) {
@@ -39,6 +40,7 @@ function KpiTile({ label, value, children, tag }) {
  */
 export default async function AnalyticsDashboard({ basePath, range, bookingsPath }) {
   const rangeDays = ANALYTICS_RANGES.includes(Number(range)) ? Number(range) : 30;
+  await retryPendingReschedules();
   const data = await getConsultantAnalytics({ rangeDays });
   const { kpis } = data;
   const inr = (paise) => formatAmount(paise);
@@ -91,8 +93,14 @@ export default async function AnalyticsDashboard({ basePath, range, bookingsPath
         <KpiTile label={`Revenue, last ${rangeDays} days`} value={inr(kpis.revenueInRangePaise)} tag={`${rangeDays}d`}>
           {kpis.bookingsInRange} bookings · avg {inr(kpis.averageBookingValuePaise)}
         </KpiTile>
-        <KpiTile label="Needs reschedule" value={kpis.rescheduleCount} tag={kpis.rescheduleCount ? 'Action' : 'OK'}>
-          {kpis.rescheduleCount ? <Link href={`${bookingsPath}?view=reschedule`}>Review now →</Link> : 'No paid booking is waiting for a new time'}
+        <KpiTile label="Automatic moves" value={kpis.autoMovesInRange} tag={`${rangeDays}d`}>
+          {kpis.slotTakenMoves} slot taken · {kpis.unavailableMoves} you unavailable · {kpis.clientChangesInRange} changed by clients
+          {kpis.rescheduleCount > 0 && (
+            <>
+              {' · '}
+              <Link href={`${bookingsPath}?view=reschedule`}>{kpis.rescheduleCount} waiting for a free slot →</Link>
+            </>
+          )}
         </KpiTile>
       </div>
 

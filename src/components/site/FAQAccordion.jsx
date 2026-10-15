@@ -61,6 +61,7 @@ export default function FAQAccordion() {
                       onClick={() => toggleFAQ(idx)}
                       aria-expanded={isOpen}
                       aria-controls={`faq-answer-${idx}`}
+                      suppressHydrationWarning
                     >
                       <span>{faq.question}</span>
                       <ChevronDownIcon className="accordion-icon" />

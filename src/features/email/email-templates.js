@@ -14,7 +14,7 @@ export const EMAIL_TEMPLATES = {
     templateName: 'Booking confirmed — to customer',
     description: 'Sent to the customer as soon as Worldline confirms their payment.',
     recipientLabel: 'Customer',
-    variables: ['client_name', 'company_name', 'slot_time', 'amount', 'booking_reference', 'payment_id', ...SITE_VARIABLES],
+    variables: ['client_name', 'company_name', 'slot_time', 'amount', 'booking_reference', 'payment_id', 'reschedule_link', ...SITE_VARIABLES],
     defaultSubject: 'Your consultation is confirmed — {{slot_time}}',
     defaultBodyHtml: `<p>Hi {{client_name}},</p>
 <p>Thank you for booking a sales strategy consultation. Your payment was received and your slot is confirmed.</p>
@@ -24,7 +24,8 @@ export const EMAIL_TEMPLATES = {
   <tr><td><strong>Booking reference</strong></td><td>{{booking_reference}}</td></tr>
   <tr><td><strong>Payment ID</strong></td><td>{{payment_id}}</td></tr>
 </table>
-<p>We look forward to speaking with you. If you need to change anything, reply to this email or contact us at {{contact_email}}.</p>
+<p>Need a different time? <a href="{{reschedule_link}}">Choose another time</a>.</p>
+<p>We look forward to speaking with you. For anything else, reply to this email or contact us at {{contact_email}}.</p>
 <p>— {{site_name}}</p>`,
   },
   booking_notification_consultant: {
@@ -49,6 +50,69 @@ export const EMAIL_TEMPLATES = {
   <tr><td><strong>Booking reference</strong></td><td>{{booking_reference}}</td></tr>
   <tr><td><strong>Payment ID</strong></td><td>{{payment_id}}</td></tr>
 </table>`,
+  },
+  booking_rescheduled_customer: {
+    templateName: 'Time changed — to customer',
+    description:
+      'Sent when a booking moves to a new time: automatically (slot taken / consultant unavailable) or because the customer chose another time.',
+    recipientLabel: 'Customer',
+    variables: ['client_name', 'previous_slot_time', 'slot_time', 'reschedule_reason', 'booking_reference', 'amount', 'reschedule_link', ...SITE_VARIABLES],
+    defaultSubject: 'Your consultation time: {{slot_time}}',
+    defaultBodyHtml: `<p>Hi {{client_name}},</p>
+<p>{{reschedule_reason}}</p>
+<table>
+  <tr><td><strong>New time</strong></td><td>{{slot_time}}</td></tr>
+  <tr><td><strong>Previous time</strong></td><td><s>{{previous_slot_time}}</s></td></tr>
+  <tr><td><strong>Booking reference</strong></td><td>{{booking_reference}}</td></tr>
+  <tr><td><strong>Amount paid</strong></td><td>{{amount}}</td></tr>
+</table>
+<p>Your payment is safe and nothing else is needed from you. If this time doesn't suit you, <a href="{{reschedule_link}}">choose another time</a>.</p>
+<p>— {{site_name}}</p>`,
+  },
+  booking_rescheduled_consultant: {
+    templateName: 'Time changed — to consultant',
+    description: 'Sent to every active consultant when a booking moves to a new time.',
+    recipientLabel: 'Consultant',
+    variables: [
+      'client_name', 'company_name', 'client_email', 'client_phone', 'previous_slot_time', 'slot_time',
+      'reschedule_reason', 'booking_reference', ...SITE_VARIABLES,
+    ],
+    defaultSubject: 'Booking moved: {{client_name}} → {{slot_time}}',
+    defaultBodyHtml: `<p>A consultation has moved to a new time.</p>
+<table>
+  <tr><td><strong>Client</strong></td><td>{{client_name}} — {{company_name}}</td></tr>
+  <tr><td><strong>New time</strong></td><td>{{slot_time}}</td></tr>
+  <tr><td><strong>Previous time</strong></td><td><s>{{previous_slot_time}}</s></td></tr>
+  <tr><td><strong>Why</strong></td><td>{{reschedule_reason}}</td></tr>
+  <tr><td><strong>Email / phone</strong></td><td>{{client_email}} · {{client_phone}}</td></tr>
+  <tr><td><strong>Booking reference</strong></td><td>{{booking_reference}}</td></tr>
+</table>`,
+  },
+  booking_reschedule_pending_customer: {
+    templateName: 'No free time yet — to customer',
+    description:
+      'Rare: a paid booking must move but no slot is free in the next 30 days. It is moved automatically as soon as one opens.',
+    recipientLabel: 'Customer',
+    variables: ['client_name', 'previous_slot_time', 'booking_reference', 'amount', ...SITE_VARIABLES],
+    defaultSubject: 'About your consultation ({{booking_reference}})',
+    defaultBodyHtml: `<p>Hi {{client_name}},</p>
+<p>Your payment of {{amount}} was received, but the time you chose ({{previous_slot_time}}) is no longer available and there is no free slot in the coming weeks yet.</p>
+<p>Your payment is safe. As soon as a slot opens we will book it for you and email you the new time. You can also reply to this email or contact us at {{contact_email}}.</p>
+<p>— {{site_name}}</p>`,
+  },
+  booking_reschedule_pending_consultant: {
+    templateName: 'No free time yet — to consultant',
+    description: 'Sent to consultants when a paid booking could not be moved automatically because no slot is free in the next 30 days.',
+    recipientLabel: 'Consultant',
+    variables: ['client_name', 'company_name', 'client_email', 'client_phone', 'previous_slot_time', 'booking_reference', ...SITE_VARIABLES],
+    defaultSubject: 'Action: no free slot for {{client_name}} ({{booking_reference}})',
+    defaultBodyHtml: `<p>A paid booking needs a new time, but no slot is free in the next 30 days.</p>
+<table>
+  <tr><td><strong>Client</strong></td><td>{{client_name}} — {{company_name}}</td></tr>
+  <tr><td><strong>Original time</strong></td><td>{{previous_slot_time}}</td></tr>
+  <tr><td><strong>Email / phone</strong></td><td>{{client_email}} · {{client_phone}}</td></tr>
+</table>
+<p>Open some availability (or reopen blocked days) and it will be booked automatically.</p>`,
   },
   smtp_test: {
     templateName: 'SMTP test',
@@ -75,6 +139,9 @@ export const SAMPLE_VARIABLES = {
   booking_reference: '4A48CF25',
   payment_id: '900000051410000000700000100001',
   sent_at: '15 Oct 2026, 11:30 am',
+  previous_slot_time: 'Thu, 15 Oct 2026, 10:30 AM – 11:00 AM',
+  reschedule_reason: 'Another client paid for your chosen time a moment before you, so we booked the next free slot for you.',
+  reschedule_link: 'https://example.com/booking/reschedule?token=example',
   site_name: 'ProConnect',
   contact_email: 'hello@example.com',
   contact_phone: '+91 90000 00000',

@@ -10,6 +10,7 @@ import {
   addDays,
   weekdayOf,
   formatSlotLabel,
+  findNextAvailableSlot,
 } from '../../src/features/schedule/slot-engine.js';
 
 let passed = 0;
@@ -89,6 +90,25 @@ const json = JSON.stringify(publicDays);
 assert(!json.includes('Riya') && !json.includes('t2') && !json.includes('timeOffId'), 'Public availability exposes no client names or time-off ids');
 assert(publicDays[1].slots.find((s) => s.slotKey === '2026-10-16T14:00').status === 'unavailable' && publicDays[1].slots.find((s) => s.slotKey === '2026-10-16T10:30').status === 'booked',
   'Public statuses: available / booked / unavailable');
+
+// --- next free slot (automatic reschedule) ---
+days = build({ bookings: [booking] });
+let next = findNextAvailableSlot(days, { afterDate: '2026-10-16', afterStartTime: '10:30' });
+assert(next?.slotKey === '2026-10-16T11:00', 'Next slot after a taken 10:30 is 11:00 the same day', next);
+days = build({ bookings: [booking, { ...booking, bookingId: 'b2', slotStartTime: '11:00', slotEndTime: '11:30' }] });
+next = findNextAvailableSlot(days, { afterDate: '2026-10-16', afterStartTime: '10:30' });
+assert(next?.slotKey === '2026-10-16T11:30', 'Skips slots that are already booked', next);
+days = build({ timeOff: [{ timeOffId: 't9', offDate: '2026-10-16', startTime: '17:00', endTime: '18:30' }] });
+next = findNextAvailableSlot(days, { afterDate: '2026-10-16', afterStartTime: '16:30' });
+assert(next?.slotKey === '2026-10-17T10:00', 'Skips blocked time and rolls over to the next open day', next);
+next = findNextAvailableSlot(build(), { afterDate: '2026-10-17', afterStartTime: '18:00' });
+assert(next?.slotKey === '2026-10-19T10:00', 'Skips a closed day (Sunday) when rolling over', next);
+next = findNextAvailableSlot(build(), { afterDate: '2026-10-16', afterStartTime: '10:30', excludeSlotKeys: ['2026-10-16T11:00'] });
+assert(next?.slotKey === '2026-10-16T11:30', 'Excluded slots (lost a race) are skipped', next);
+next = findNextAvailableSlot(build({ now: new Date('2026-10-15T04:40:00Z') }), { afterDate: '2026-10-15', afterStartTime: '10:00' });
+assert(next?.slotKey === '2026-10-15T11:30', 'Respects minimum notice today', next);
+next = findNextAvailableSlot(build({ timeOff: ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-19', '2026-10-20', '2026-10-21'].map((d, i) => ({ timeOffId: 'x' + i, offDate: d, startTime: null, endTime: null })) }), { afterDate: '2026-10-15', afterStartTime: '09:00' });
+assert(next === null, 'Returns null when nothing is free in the range');
 
 console.log(`\nRESULTS: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

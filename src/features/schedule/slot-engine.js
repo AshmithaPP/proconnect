@@ -212,3 +212,24 @@ export function toPublicAvailability(days) {
       })),
   }));
 }
+
+/**
+ * The first bookable slot strictly after a given date + time — used to move a paid booking
+ * automatically (e.g. its slot was taken a moment earlier). Searches later the same day
+ * first, then the following days, in calendar order.
+ *
+ * @param {ReturnType<typeof buildAvailability>} days - calendar covering the search range
+ * @param {{ afterDate: string, afterStartTime: string, excludeSlotKeys?: string[] }} options
+ * @returns {{ date: string, startTime: string, endTime: string, label: string, slotKey: string } | null}
+ */
+export function findNextAvailableSlot(days, { afterDate, afterStartTime, excludeSlotKeys = [] }) {
+  for (const day of days) {
+    if (day.date < afterDate) continue;
+    for (const slot of day.slots) {
+      if (slot.status !== 'available' || slot.outsideHours || excludeSlotKeys.includes(slot.slotKey)) continue;
+      if (day.date === afterDate && slot.startTime <= afterStartTime) continue;
+      return { date: day.date, startTime: slot.startTime, endTime: slot.endTime, label: slot.label, slotKey: slot.slotKey };
+    }
+  }
+  return null;
+}

@@ -16,8 +16,9 @@ const STATUS_TEXT = {
 
 /**
  * Consultant availability: every day in view with its slots. Click an open slot to mark
- * yourself unavailable, click it again to reopen; or switch a whole day off. Paid bookings
- * can't be blocked (they must be rescheduled first). Customers see changes immediately.
+ * yourself unavailable, click it again to reopen; or switch a whole day off. A paid booking in
+ * a blocked time is moved automatically to the next free slot (after you confirm) and its client
+ * emailed. Customers see changes immediately.
  *
  * @param {{ schedulePath: string, initialWindowDays: number }} props
  */
@@ -59,7 +60,11 @@ export default function AvailabilityCalendar({ schedulePath, initialWindowDays }
       if (!res.ok) {
         setStatus({ type: 'error', message: json.error || 'Could not save' });
       } else {
-        setStatus({ type: 'success', message: successMessage });
+        const moved = (json.movedBookings || []).map((b) =>
+          b.outcome === 'moved' ? `${b.fullName} → ${b.newTime}` : `${b.fullName}: no free slot yet (booked automatically when one opens)`
+        );
+        const waiting = json.rescheduledWaitingBookings ? ` ${json.rescheduledWaitingBookings} waiting booking(s) got a slot.` : '';
+        setStatus({ type: 'success', message: `${successMessage}${moved.length ? ` · Moved: ${moved.join('; ')}` : ''}${waiting}` });
         await load(fromDate);
       }
     } catch {
@@ -70,7 +75,12 @@ export default function AvailabilityCalendar({ schedulePath, initialWindowDays }
   };
 
   const toggleSlot = (day, slot) => {
-    if (slot.status === 'available') {
+    if (slot.status === 'booked' && slot.booking) {
+      if (!window.confirm(`${slot.label} is booked by ${slot.booking.fullName}. Mark it unavailable?
+
+The booking will be moved automatically to the next free slot and the client emailed.`)) return;
+      send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime, timeOffReason: reason, confirmMove: true }, `${formatDateLabel(day.date)} ${slot.label} marked unavailable`);
+    } else if (slot.status === 'available') {
       send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime, timeOffReason: reason }, `${formatDateLabel(day.date)} ${slot.label} marked unavailable`);
     } else if (slot.status === 'blocked' && slot.timeOffId && !day.isDayOff) {
       send(slot.slotKey, `/api/consultant/time-off/${slot.timeOffId}`, 'DELETE', null, `${formatDateLabel(day.date)} ${slot.label} is open again`);
@@ -81,7 +91,11 @@ export default function AvailabilityCalendar({ schedulePath, initialWindowDays }
     if (day.isDayOff) {
       send(day.date, `/api/consultant/time-off/${day.dayOffId}`, 'DELETE', null, `${formatDateLabel(day.date)} is open again`);
     } else {
-      send(day.date, '/api/consultant/time-off', 'POST', { offDate: day.date, timeOffReason: reason }, `${formatDateLabel(day.date)} marked unavailable`);
+      const booked = day.slots.filter((s) => s.status === 'booked');
+      if (booked.length && !window.confirm(`${formatDateLabel(day.date)} has ${booked.length} paid booking(s). Mark the whole day unavailable?
+
+They will be moved automatically to the next free slots and the clients emailed.`)) return;
+      send(day.date, '/api/consultant/time-off', 'POST', { offDate: day.date, timeOffReason: reason, confirmMove: booked.length > 0 }, `${formatDateLabel(day.date)} marked unavailable`);
     }
   };
 
@@ -152,8 +166,8 @@ export default function AvailabilityCalendar({ schedulePath, initialWindowDays }
                 <button
                   type="button"
                   className={`btn-pro btn-sm ${day.isDayOff ? 'btn-orange' : 'btn-light'}`}
-                  disabled={busyKey === day.date || (!day.isDayOff && bookedCount > 0)}
-                  title={!day.isDayOff && bookedCount > 0 ? 'This day has paid bookings — reschedule them first' : undefined}
+                  disabled={busyKey === day.date}
+                  title={!day.isDayOff && bookedCount > 0 ? 'Its paid bookings will be moved to the next free slots' : undefined}
                   onClick={() => toggleDay(day)}
                 >
                   {busyKey === day.date ? 'Saving…' : day.isDayOff ? 'Make day available' : 'Mark whole day unavailable'}
@@ -164,7 +178,9 @@ export default function AvailabilityCalendar({ schedulePath, initialWindowDays }
             {!day.isClosed && day.slots.length > 0 && (
               <div className="avail-slot-grid">
                 {day.slots.map((slot) => {
-                  const clickable = (slot.status === 'available' || (slot.status === 'blocked' && !day.isDayOff)) && !busyKey;
+                  const clickable =
+                    (slot.status === 'available' || (slot.status === 'blocked' && !day.isDayOff) || (slot.status === 'booked' && !slot.outsideHours && day.date >= data.today)) &&
+                    !busyKey;
                   return (
                     <button
                       key={slot.slotKey}
@@ -172,7 +188,7 @@ export default function AvailabilityCalendar({ schedulePath, initialWindowDays }
                       className={`avail-slot ${slot.status}`}
                       disabled={!clickable}
                       onClick={() => toggleSlot(day, slot)}
-                      aria-label={`${slot.label}: ${STATUS_TEXT[slot.status]}${slot.booking ? ` — ${slot.booking.fullName}` : ''}${clickable ? (slot.status === 'available' ? '. Click to mark unavailable' : '. Click to reopen') : ''}`}
+                      aria-label={`${slot.label}: ${STATUS_TEXT[slot.status]}${slot.booking ? ` — ${slot.booking.fullName}` : ''}${clickable ? (slot.status === 'blocked' ? '. Click to reopen' : '. Click to mark unavailable') : ''}`}
                     >
                       <span className="avail-slot-time">{slot.label}</span>
                       <span className="avail-slot-state">

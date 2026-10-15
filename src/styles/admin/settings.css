@@ -575,3 +575,16 @@
     padding-top: 0;
   }
 }
+
+.cell-strike {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+.admin-data-table .status-chip {
+  margin-top: 4px;
+}
+
+.avail-slot.booked:hover:not(:disabled) {
+  border-color: var(--color-error);
+}

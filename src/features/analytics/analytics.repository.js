@@ -2,6 +2,7 @@ import 'server-only';
 import { query } from '@/lib/db';
 import { getBusinessTimezone, loadAvailability } from '@/features/schedule/schedule.repository';
 import { getBookingViewCounts } from '@/features/booking/booking.repository';
+import { countReschedulesSince } from '@/features/reschedule/reschedule.repository';
 import { addDays, getZonedNow, weekdayOf, timeToMinutes, formatSlotLabel, formatDateLabel } from '@/features/schedule/slot-engine';
 
 export const ANALYTICS_RANGES = [7, 30, 90];
@@ -58,7 +59,8 @@ export async function getConsultantAnalytics({ rangeDays }) {
   const fetchFromInstant = new Date(new Date(`${fetchFrom}T00:00:00Z`).getTime() - ONE_DAY_MS);
   const toBusinessDate = (instant) => getZonedNow(timezone, new Date(instant)).date;
 
-  const [paidRows, createdRows, totalRows, upcomingRows, availability, viewCounts] = await Promise.all([
+  const rangeStartInstant = new Date(new Date(`${rangeStart}T00:00:00Z`).getTime() - ONE_DAY_MS);
+  const [paidRows, createdRows, totalRows, upcomingRows, availability, viewCounts, reschedules] = await Promise.all([
     query(
       `SELECT p.amount_paise, p.paid_at, b.booking_status, b.user_role, b.sales_team_size, b.sales_challenge,
               DATE_FORMAT(b.consultation_date, '%Y-%m-%d') AS consultation_date, TIME_FORMAT(b.slot_start_time, '%H:%i') AS slot_start_time
@@ -87,6 +89,7 @@ export async function getConsultantAnalytics({ rangeDays }) {
     ),
     loadAvailability(),
     getBookingViewCounts(today),
+    countReschedulesSince(rangeStartInstant),
   ]);
 
   const paid = paidRows.map((row) => ({ ...row, paidDate: toBusinessDate(row.paid_at), amount: Number(row.amount_paise) }));
@@ -175,6 +178,10 @@ export async function getConsultantAnalytics({ rangeDays }) {
       openSlots,
       conversionPercent: submitted ? Math.round((paidFromRange / submitted) * 100) : null,
       rescheduleCount: viewCounts.reschedule,
+      autoMovesInRange: (reschedules.slot_taken || 0) + (reschedules.consultant_unavailable || 0),
+      slotTakenMoves: reschedules.slot_taken || 0,
+      unavailableMoves: reschedules.consultant_unavailable || 0,
+      clientChangesInRange: reschedules.customer_request || 0,
       allTimeRevenuePaise: Number(totalRows[0].revenue_paise),
       allTimeBookings: Number(totalRows[0].paid_count),
     },

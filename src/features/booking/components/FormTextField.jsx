@@ -21,6 +21,7 @@ export default function FormTextField({ id, name, label, icon, type = 'text', va
           onChange={onChange}
           placeholder={placeholder}
           required
+          suppressHydrationWarning
         />
       </div>
     </div>

@@ -92,7 +92,15 @@ export default function useBookingForm(onSuccess) {
     }));
   };
 
-  const handleDateChange = (date) => setSelectedDate(date);
+  const handleDateChange = (date) => {
+    setSelectedDate(date);
+    setFormData((prev) => {
+      if (prev.slotKey && !prev.slotKey.startsWith(date)) {
+        return { ...prev, slotKey: '' };
+      }
+      return prev;
+    });
+  };
 
   const selectedSlotLabel = (() => {
     for (const day of availability.days) {
