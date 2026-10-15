@@ -6,10 +6,11 @@ const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
 /**
  * GET /api/consultant/bookings?page=1&pageSize=20
- * Consultant-only: successfully paid & confirmed bookings (most recently paid first), plus KPI stats.
+ * Consultant or platform admin: successfully paid & confirmed bookings (most recently paid first), plus KPI stats.
  */
 export async function GET(request) {
-  const auth = await verifyPortalApiSession('consultant');
+  // Shared feature: the platform admin can see everything the consultant can
+  const auth = await verifyPortalApiSession(['consultant', 'admin']);
   if (!auth.authorized) {
     return auth.response;
   }

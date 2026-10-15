@@ -53,6 +53,85 @@ export async function listPortalUsersByRole(userRole) {
 }
 
 /**
+ * @param {string} portalUserId
+ * @returns {Promise<any | null>} raw row incl. password_hash (server use only)
+ */
+export async function findPortalUserById(portalUserId) {
+  const rows = await query(
+    `SELECT portal_user_id, full_name, email, password_hash, user_role, account_status
+     FROM portal_users WHERE portal_user_id = ? LIMIT 1`,
+    [portalUserId]
+  );
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * @param {{ fullName: string, email: string, passwordHash: string, userRole: 'platform_admin'|'consultant' }} account
+ * @returns {Promise<{ outcome: 'created', portalUserId: string } | { outcome: 'email_taken' }>}
+ */
+export async function createPortalUser({ fullName, email, passwordHash, userRole }) {
+  const portalUserId = crypto.randomUUID();
+  try {
+    await query(
+      `INSERT INTO portal_users (portal_user_id, full_name, email, password_hash, user_role, account_status)
+       VALUES (?, ?, ?, ?, ?, 'active')`,
+      [portalUserId, fullName, email, passwordHash, userRole]
+    );
+    return { outcome: 'created', portalUserId };
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return { outcome: 'email_taken' };
+    throw err;
+  }
+}
+
+/**
+ * Update name / email / status of one account of a given role.
+ * @param {string} portalUserId
+ * @param {'platform_admin'|'consultant'} userRole - guards against editing another role's account
+ * @param {{ fullName?: string, email?: string, accountStatus?: 'active'|'inactive' }} changes
+ * @returns {Promise<'updated' | 'not_found' | 'email_taken'>}
+ */
+export async function updatePortalUser(portalUserId, userRole, changes) {
+  const columns = { fullName: 'full_name', email: 'email', accountStatus: 'account_status' };
+  const entries = Object.entries(changes).filter(([key, value]) => columns[key] && value !== undefined);
+  if (!entries.length) return 'updated';
+
+  try {
+    const result = await query(
+      `UPDATE portal_users SET ${entries.map(([key]) => `${columns[key]} = ?`).join(', ')}
+       WHERE portal_user_id = ? AND user_role = ?`,
+      [...entries.map(([, value]) => value), portalUserId, userRole]
+    );
+    return result.affectedRows ? 'updated' : 'not_found';
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return 'email_taken';
+    throw err;
+  }
+}
+
+/**
+ * @param {string} portalUserId
+ * @param {string} passwordHash
+ */
+export async function setPortalUserPassword(portalUserId, passwordHash) {
+  await query(`UPDATE portal_users SET password_hash = ? WHERE portal_user_id = ?`, [passwordHash, portalUserId]);
+}
+
+/**
+ * Sign an account out everywhere (after a password change, reset or deactivation),
+ * optionally keeping the session that made the change.
+ * @param {string} portalUserId
+ * @param {string} [keepSessionTokenHash]
+ */
+export async function revokeAllSessionsForUser(portalUserId, keepSessionTokenHash) {
+  await query(
+    `UPDATE portal_sessions SET revoked_at = NOW()
+     WHERE portal_user_id = ? AND revoked_at IS NULL AND session_token_hash <> ?`,
+    [portalUserId, keepSessionTokenHash || '']
+  );
+}
+
+/**
  * Store a new session record in MySQL with a dynamic UUID
  * @param {Object} params
  * @param {string} params.portalUserId

@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { requirePortalUser } from '@/features/auth/require-portal-user';
 import { listPortalUsersByRole } from '@/features/auth/portal-user.repository';
 import { getPaidBookingStats } from '@/features/booking/booking.repository';
@@ -105,12 +106,12 @@ export default async function AdminDashboardPage() {
       <div className="admin-table-card">
         <div className="admin-table-head">
           <h2 className="admin-table-title">Consultant Accounts</h2>
-          <span className="card-pill-tag">{consultants.length} total</span>
+          <Link href="/admin/dashboard/consultants" className="card-pill-tag">Manage →</Link>
         </div>
 
         {consultants.length === 0 ? (
           <div className="admin-table-empty">
-            No consultant account yet. Create one with <code>npm run seed:consultant</code>.
+            No consultant account yet. <Link href="/admin/dashboard/consultants">Create one</Link>.
           </div>
         ) : (
           <div className="admin-table-scroll">

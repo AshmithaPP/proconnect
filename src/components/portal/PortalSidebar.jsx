@@ -4,13 +4,17 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import LogoutButton from '@/features/auth/components/LogoutButton';
-import { DashboardGridIcon } from '@/components/ui/Icons';
+import { DashboardGridIcon, CalendarIcon, UsersIcon, ServerIcon, MailIcon, UserIcon } from '@/components/ui/Icons';
 import { getPortal } from '@/features/auth/portals';
+import { PORTAL_NAVIGATION, isNavItemActive } from '@/features/auth/portal-navigation';
 
-/** Sidebar links per portal; later phases add bookings, availability, settings… */
-const PORTAL_NAV = {
-  admin: [{ label: 'Dashboard', href: '/admin/dashboard', Icon: DashboardGridIcon }],
-  consultant: [{ label: 'Dashboard', href: '/consultant/dashboard', Icon: DashboardGridIcon }],
+const NAV_ICONS = {
+  dashboard: DashboardGridIcon,
+  calendar: CalendarIcon,
+  users: UsersIcon,
+  settings: ServerIcon,
+  mail: MailIcon,
+  user: UserIcon,
 };
 
 /**
@@ -19,13 +23,6 @@ const PORTAL_NAV = {
 export default function PortalSidebar({ portalKey, user }) {
   const pathname = usePathname();
   const portal = getPortal(portalKey);
-
-  const navItems = PORTAL_NAV[portalKey].map(({ label, href, Icon }) => ({
-    label,
-    href,
-    icon: <Icon className="sidebar-icon" />,
-    active: pathname === href,
-  }));
 
   const initials = user?.fullName
     ? user.fullName
@@ -48,24 +45,31 @@ export default function PortalSidebar({ portalKey, user }) {
         </Link>
       </div>
 
-      {/* Main Navigation - Dashboard only */}
+      {/* Main Navigation */}
       <div className="sidebar-content-scroll">
-        <div className="sidebar-section-group">
-          <span className="sidebar-section-title">NAVIGATION</span>
-          <ul className="sidebar-nav-list">
-            {navItems.map((item, idx) => (
-              <li key={idx} className="sidebar-nav-item">
-                <Link
-                  href={item.href}
-                  className={`sidebar-nav-link ${item.active ? 'active' : ''}`}
-                >
-                  <span className="link-icon-wrap">{item.icon}</span>
-                  <span className="link-label">{item.label}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {PORTAL_NAVIGATION[portalKey].map((section) => (
+          <div key={section.sectionTitle} className="sidebar-section-group">
+            <span className="sidebar-section-title">{section.sectionTitle}</span>
+            <ul className="sidebar-nav-list">
+              {section.items.map((item) => {
+                const Icon = NAV_ICONS[item.icon] || DashboardGridIcon;
+                return (
+                  <li key={item.href} className="sidebar-nav-item">
+                    <Link
+                      href={item.href}
+                      className={`sidebar-nav-link ${isNavItemActive(item, pathname) ? 'active' : ''}`}
+                    >
+                      <span className="link-icon-wrap">
+                        <Icon className="sidebar-icon" />
+                      </span>
+                      <span className="link-label">{item.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </div>
 
       {/* Account Profile Card & Sign Out Footer */}

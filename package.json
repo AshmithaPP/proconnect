@@ -13,9 +13,10 @@
     "seed:consultant": "node db/create-portal-user.js --role consultant",
     "test:auth": "node tests/e2e/auth.test.js",
     "test:bookings": "node tests/e2e/bookings.test.js",
-    "test:e2e": "npm run test:auth && npm run test:bookings && npm run test:payment-flow",
+    "test:e2e": "npm run test:auth && npm run test:admin && npm run test:bookings && npm run test:payment-flow",
     "test:payment-flow": "node tests/e2e/payment-flow.test.js",
-    "worldline:check": "node tools/check-worldline.js"
+    "worldline:check": "node tools/check-worldline.js",
+    "test:admin": "node tests/e2e/admin-portal.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -23,8 +24,12 @@
     "dotenv": "^18.0.7",
     "mysql2": "^3.24.5",
     "next": "^15.2.1",
+    "nodemailer": "^7.0.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "smtp-server": "^3.19.22"
   }
 }

@@ -136,7 +136,7 @@ async function run() {
 
   // --- Roles never cross ---
   res = await get('/api/consultant/bookings', admin.cookie);
-  assert(res.status === 401, 'Admin session cannot read consultant bookings API');
+  assert(res.status === 200, 'Admin session can read the shared bookings API (admin has every consultant feature)');
 
   res = await get('/api/consultant/bookings', asCookie(admin.cookie, 'consultant_session'));
   assert(res.status === 401, 'Admin token relabelled as consultant_session is rejected by the API');

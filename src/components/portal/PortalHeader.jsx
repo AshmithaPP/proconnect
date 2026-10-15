@@ -2,24 +2,26 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import LogoutButton from '@/features/auth/components/LogoutButton';
 import { getPortal } from '@/features/auth/portals';
+import { getActiveNavLabel } from '@/features/auth/portal-navigation';
 
 /**
- * @param {{ portalKey: 'admin' | 'consultant', title?: string }} props
+ * @param {{ portalKey: 'admin' | 'consultant' }} props
  */
-export default function PortalHeader({ portalKey, title = 'Dashboard Overview' }) {
+export default function PortalHeader({ portalKey }) {
+  const pathname = usePathname();
+
   return (
     <header className="admin-top-header">
       <div className="header-breadcrumbs">
         <span className="crumb-root">{getPortal(portalKey).label} Portal</span>
         <span className="crumb-sep">/</span>
-        <span className="crumb-active">{title}</span>
+        <span className="crumb-active">{getActiveNavLabel(portalKey, pathname)}</span>
       </div>
 
       <div className="header-actions-row">
-     
-
         {/* Public Website Link */}
         <Link
           href="/"

@@ -1,6 +1,7 @@
 import 'server-only';
 import { markBookingPaymentSucceeded, markBookingCancelled } from '@/features/booking/booking.repository';
 import { getHostedCheckoutStatus, capturePayment } from '@/features/payments/worldline.client';
+import { sendBookingConfirmationEmails } from '@/features/email/booking-emails';
 
 /**
  * Brings a booking in line with what Worldline says about its hosted checkout.
@@ -60,6 +61,12 @@ export async function reconcileWorldlineBooking(booking) {
       // Booking was cancelled before the gateway confirmed payment — needs manual follow-up/refund
       console.error('[Worldline] Payment confirmed for cancelled booking:', bookingId, hostedCheckoutId);
       return { outcome: 'booking_cancelled' };
+    }
+
+    // First confirmation only (not a refresh of an already-paid booking). Not awaited:
+    // the customer's redirect must not wait on the mail server.
+    if (result.outcome === 'paid') {
+      void sendBookingConfirmationEmails(bookingId);
     }
     return { outcome: 'paid', paymentId: verification.paymentId || '' };
   }
