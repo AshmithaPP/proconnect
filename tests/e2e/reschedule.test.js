@@ -12,11 +12,13 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import { assertTestDatabase } from './helpers/test-db.js';
 import mysql from 'mysql2/promise';
 import { SMTPServer } from 'smtp-server';
 import { createRealDataGuard } from './helpers/real-data-guard.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
+assertTestDatabase();
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const ORIGIN = new URL(BASE_URL).origin;
@@ -29,7 +31,6 @@ const SMTP_PORT = 2900 + Math.floor(Math.random() * 300);
 const RULES = (overrides = {}) => ({
   consultationFeeRupees: 999,
   bookingWindowDays: 10,
-  slotDurationMinutes: 60,
   ...overrides,
 });
 
@@ -184,7 +185,7 @@ async function run() {
   const consultant = await login('consultant', CONSULTANT_EMAIL);
   const admin = await login('admin', ADMIN_EMAIL);
 
-  // 60-min consultations (fewer slots), 10-day window
+  // 10-day window
   let r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: RULES() } });
   assert(r.status === 200, 'Test rules saved', r.data);
   r = await api('/api/admin/settings/smtp', {
@@ -203,7 +204,7 @@ async function run() {
     }
   }
   if (!dayA) throw new Error('No day without real bookings in the window — refusing to run');
-  const [slot10, slot11, slot12] = dayA.slots.map((s) => s.slotKey); // 10:00, 11:00, 12:00
+  const [slot10, slot11, slot12] = dayA.slots.map((s) => s.slotKey); // 10:00, 10:30, 11:00
 
   // --- 1. Two payments, one slot: first keeps it, second is moved to the next free slot ---
   const first = await createBooking(slot10, 'Anita');
@@ -215,15 +216,15 @@ async function run() {
 
   r = await api('/consultant/dashboard/bookings', { cookie: consultant }); // any portal load retries waiting bookings
   let secondState = await bookingState(second.bookingId);
-  assert(secondState.booking_status === 'confirmed' && secondState.d === dayA.date && secondState.t === '11:00',
-    'Second payer was moved automatically to the next free slot (11:00 same day)', secondState);
+  assert(secondState.booking_status === 'confirmed' && secondState.d === dayA.date && secondState.t === '10:30',
+    'Second payer was moved automatically to the next free slot (10:30 same day)', secondState);
   assert((await bookingState(first.bookingId)).t === '10:00', 'First payer keeps the original slot');
   let moves = await history(second.bookingId);
   assert(moves.length === 1 && moves[0].reschedule_reason === 'slot_taken' && moves[0].rescheduled_by === 'system', 'Move recorded as slot_taken by system', moves);
   assert(r.text.includes('Auto-moved'), 'Consultant bookings list shows the Auto-moved badge');
 
   const movedMail = await mailTo(second.workEmail, 'New time');
-  assert(movedMail && movedMail.text.includes('Another client paid for your chosen time') && movedMail.text.includes('11:00 AM'),
+  assert(movedMail && movedMail.text.includes('Another client paid for your chosen time') && movedMail.text.includes('10:30 AM'),
     'Customer is emailed the new time and the reason', movedMail?.text.slice(0, 400));
   assert(await mailTo(CONSULTANT_EMAIL, 'A consultation has moved to a new time'), 'Consultant is emailed about the move');
   const firstLink = linkIn(movedMail);
@@ -235,16 +236,16 @@ async function run() {
 
   // --- 2. Three payments on one slot: each later one goes to the next still-free slot ---
   await markPaidCollision(third.bookingId);
-  await api('/consultant/dashboard', { cookie: consultant });
-  assert((await bookingState(third.bookingId)).t === '12:00', 'Third payer skips the already-filled 11:00 and gets 12:00');
+  await api('/consultant/dashboard/bookings', { cookie: consultant }); // retries waiting bookings
+  assert((await bookingState(third.bookingId)).t === '11:00', 'Third payer skips the already-filled 10:30 and gets 11:00');
 
   // --- 3. Consultant marks a booked slot unavailable → booking moved automatically ---
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '10:00', endTime: '11:00' } });
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '10:00', endTime: '10:30' } });
   assert(r.status === 409 && r.data.canAutoMove && r.data.clashingBookings[0].bookingId === first.bookingId, 'Blocking a booked slot asks for confirmation first', r.data);
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '10:00', endTime: '11:00', confirmMove: true } });
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: '10:00', endTime: '10:30', confirmMove: true } });
   const firstState = await bookingState(first.bookingId);
-  assert(r.status === 201 && r.data.movedBookings[0].outcome === 'moved' && firstState.booking_status === 'confirmed' && firstState.d === dayA.date && firstState.t === '14:00',
-    'Confirmed → booking moved to the next free slot (14:00 — skips the full morning and the 1–2 PM break)', { response: r.data, firstState });
+  assert(r.status === 201 && r.data.movedBookings[0].outcome === 'moved' && firstState.booking_status === 'confirmed' && firstState.d === dayA.date && firstState.t === '11:30',
+    'Confirmed → booking moved to the next free slot (11:30 — skips 10:30 and 11:00, already taken)', { response: r.data, firstState });
   moves = await history(first.bookingId);
   assert(moves.at(-1)?.reschedule_reason === 'consultant_unavailable' && moves.at(-1)?.rescheduled_by === 'consultant', 'Recorded as consultant_unavailable');
   assert(await mailTo(first.workEmail, 'no longer available at your chosen time'), 'That customer is emailed the new time');
@@ -310,7 +311,8 @@ async function run() {
   }
   inbox.length = 0;
   const lonelyStart = lonelySlot.split('T')[1];
-  const lonelyEnd = `${String(Number(lonelyStart.slice(0, 2)) + 1).padStart(2, '0')}:${lonelyStart.slice(3)}`;
+  const lonelyEndMinutes = Number(lonelyStart.slice(0, 2)) * 60 + Number(lonelyStart.slice(3)) + 30;
+  const lonelyEnd = `${String(Math.floor(lonelyEndMinutes / 60)).padStart(2, '0')}:${String(lonelyEndMinutes % 60).padStart(2, '0')}`;
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayA.date, startTime: lonelyStart, endTime: lonelyEnd, confirmMove: true } });
   assert(r.status === 201 && r.data.movedBookings.some((b) => b.bookingId === lonely.bookingId && b.outcome === 'pending'), 'With every slot taken or blocked, the booking waits', r.data);
   assert((await bookingState(lonely.bookingId)).booking_status === 'reschedule_required', 'Status = waiting for a free slot');

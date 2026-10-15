@@ -33,6 +33,14 @@ export async function lockBookingSlot(conn, bookingId) {
  *   rescheduledByUserId?: string|null }} move
  */
 export async function moveBookingSlot(conn, { bookingId, previous, next, reason, rescheduledBy, rescheduledByUserId = null }) {
+  // A "confirmed" booking without a paid payment does not really hold the target slot — release it
+  await conn.execute(
+    `UPDATE consultation_bookings b
+     SET b.booking_status = 'cancelled'
+     WHERE b.booking_id <> ? AND b.booking_status = 'confirmed' AND b.consultation_date = ? AND b.slot_start_time = ?
+       AND NOT EXISTS (SELECT 1 FROM booking_payments bp WHERE bp.booking_id = b.booking_id AND bp.payment_status = 'paid')`,
+    [bookingId, next.date, next.startTime]
+  );
   await conn.execute(
     `UPDATE consultation_bookings
      SET consultation_date = ?, slot_start_time = ?, slot_end_time = ?, preferred_time_slot = ?,

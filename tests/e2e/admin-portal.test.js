@@ -9,11 +9,13 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import { assertTestDatabase } from './helpers/test-db.js';
 import mysql from 'mysql2/promise';
 import { SMTPServer } from 'smtp-server';
 import { SETTING_DEFAULTS } from '../../src/features/settings/settings.definitions.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
+assertTestDatabase();
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const ORIGIN = new URL(BASE_URL).origin;
@@ -116,7 +118,7 @@ async function run() {
   }
   const admin = (await login('admin', ADMIN_EMAIL)).cookie;
   adminCookie = admin;
-  const consultant = (await login('consultant', CONSULTANT_EMAIL)).cookie;
+  let consultant = (await login('consultant', CONSULTANT_EMAIL)).cookie;
   assert(admin.startsWith('admin_session=') && consultant.startsWith('consultant_session='), 'Test accounts signed in');
 
   // --- Access control ---
@@ -124,8 +126,8 @@ async function run() {
   assert(r.status === 401, 'Consultant cannot read admin settings API');
   r = await api('/api/admin/settings/general', { method: 'PUT', cookie: consultant, body: { siteName: 'x' } });
   assert(r.status === 401, 'Consultant cannot change admin settings');
-  r = await api('/api/admin/consultants', { cookie: consultant });
-  assert(r.status === 401, 'Consultant cannot list consultant accounts');
+  r = await api('/api/admin/consultant', { cookie: consultant });
+  assert(r.status === 401, 'Consultant cannot use the admin consultant API');
   r = await api('/admin/dashboard/settings/general', { cookie: consultant });
   assert(isRedirectTo(r, '/admin/login'), 'Consultant is sent to admin login from settings page');
   r = await api('/api/admin/settings/general', { method: 'PUT', cookie: admin, body: { siteName: 'x' }, origin: 'https://evil.example' });
@@ -145,7 +147,7 @@ async function run() {
     ['/admin/dashboard/settings/seo', 'Meta description'],
     ['/admin/dashboard/settings/smtp', 'Send test email'],
     ['/admin/dashboard/email-templates', 'Booking confirmed'],
-    ['/admin/dashboard/consultants', 'Add a consultant'],
+    ['/admin/dashboard/consultant', 'Sign-in details'],
     ['/admin/dashboard/account', 'Change password'],
     ['/consultant/dashboard/account', 'Change password'],
   ]) {
@@ -241,40 +243,36 @@ async function run() {
   r = await api('/api/admin/email-templates/nope', { method: 'PUT', cookie: admin, body: { emailSubject: 'a', bodyHtml: 'b' } });
   assert(r.status === 404, 'Unknown template returns 404');
 
-  // --- Consultant accounts ---
-  const newEmail = `${TEST_PREFIX}managed.${stamp}@example.com`;
-  r = await api('/api/admin/consultants', { method: 'POST', cookie: admin, body: { fullName: 'Managed One', email: newEmail, password: 'short' } });
-  assert(r.status === 400 && r.data.fieldErrors?.password, 'Weak initial password rejected');
-  r = await api('/api/admin/consultants', { method: 'POST', cookie: admin, body: { fullName: 'Managed One', email: newEmail, password: PASSWORD } });
-  assert(r.status === 201 && r.data.portalUserId, 'Admin creates a consultant account', r.data);
-  const managedId = r.data.portalUserId;
-  r = await api('/api/admin/consultants', { method: 'POST', cookie: admin, body: { fullName: 'Dup', email: ADMIN_EMAIL, password: PASSWORD } });
-  assert(r.status === 409, 'Email already used (even by an admin) is rejected');
+  // --- The single consultant account ---
+  r = await api('/api/admin/consultant', { cookie: admin });
+  assert(r.status === 200 && r.data.consultant?.email === CONSULTANT_EMAIL, 'Admin sees the one consultant account', r.data);
+  r = await api('/api/admin/consultant', {
+    method: 'POST', cookie: admin, body: { fullName: 'Second', email: `${TEST_PREFIX}second.${stamp}@example.com`, password: PASSWORD },
+  });
+  assert(r.status === 409, 'A second consultant cannot be created');
+  r = await api('/api/admin/consultant', { method: 'PUT', cookie: admin, body: { fullName: 'Renamed', email: ADMIN_EMAIL } });
+  assert(r.status === 409, 'An email used by another account is rejected');
+  r = await api('/api/admin/consultant', { method: 'PUT', cookie: admin, body: { fullName: '', email: 'nope' } });
+  assert(r.status === 400 && r.data.fieldErrors?.fullName && r.data.fieldErrors?.email, 'Invalid name / email rejected');
+  const renamedEmail = `${TEST_PREFIX}renamed.${stamp}@example.com`;
+  r = await api('/api/admin/consultant', { method: 'PUT', cookie: admin, body: { fullName: 'Renamed Consultant', email: renamedEmail } });
+  assert(r.status === 200 && r.data.consultant.fullName === 'Renamed Consultant' && r.data.consultant.email === renamedEmail, 'Admin changes the consultant name and email');
+  assert((await login('consultant', renamedEmail)).status === 200, 'Consultant signs in with the new email');
+  await api('/api/admin/consultant', { method: 'PUT', cookie: admin, body: { fullName: 'Test Consultant', email: CONSULTANT_EMAIL } });
 
-  let managed = await login('consultant', newEmail);
-  assert(managed.status === 200, 'New consultant can sign in');
-  r = await api(`/api/admin/consultants/${managedId}`, { method: 'PATCH', cookie: consultant, body: { accountStatus: 'inactive' } });
-  assert(r.status === 401, 'Consultant cannot manage consultant accounts');
-  r = await api(`/api/admin/consultants/${managedId}`, { method: 'PATCH', cookie: admin, body: { accountStatus: 'inactive' } });
-  assert(r.status === 200, 'Admin deactivates the consultant');
-  r = await api('/api/auth/consultant/me', { cookie: managed.cookie });
-  assert(r.status === 401 && (await login('consultant', newEmail)).status === 401, 'Deactivated consultant is signed out and cannot sign in');
-  await api(`/api/admin/consultants/${managedId}`, { method: 'PATCH', cookie: admin, body: { accountStatus: 'active', fullName: 'Managed Renamed', email: newEmail } });
-  managed = await login('consultant', newEmail);
-  assert(managed.status === 200, 'Re-activated consultant can sign in again');
-
+  r = await api('/api/admin/consultant/password', { method: 'PUT', cookie: admin, body: { password: 'short' } });
+  assert(r.status === 400 && r.data.fieldErrors?.password, 'Weak password rejected');
   const resetPassword = `Reset-${crypto.randomBytes(6).toString('hex')}`;
-  r = await api(`/api/admin/consultants/${managedId}/password`, { method: 'PUT', cookie: admin, body: { password: resetPassword } });
+  r = await api('/api/admin/consultant/password', { method: 'PUT', cookie: admin, body: { password: resetPassword } });
   assert(r.status === 200, 'Admin resets the consultant password');
-  r = await api('/api/auth/consultant/me', { cookie: managed.cookie });
-  assert(r.status === 401, 'Password reset signs the consultant out everywhere');
-  assert((await login('consultant', newEmail)).status === 401 && (await login('consultant', newEmail, resetPassword)).status === 200,
+  assert((await api('/api/auth/consultant/me', { cookie: consultant })).status === 401, 'Password reset signs the consultant out everywhere');
+  assert((await login('consultant', CONSULTANT_EMAIL)).status === 401 && (await login('consultant', CONSULTANT_EMAIL, resetPassword)).status === 200,
     'Old password stops working, new one works');
-  r = await api(`/api/admin/consultants/${crypto.randomUUID()}`, { method: 'PATCH', cookie: admin, body: { accountStatus: 'inactive' } });
-  assert(r.status === 404, 'Unknown consultant returns 404');
-  const [[adminRow]] = await db.query(`SELECT portal_user_id FROM portal_users WHERE email = ?`, [ADMIN_EMAIL]);
-  r = await api(`/api/admin/consultants/${adminRow.portal_user_id}`, { method: 'PATCH', cookie: admin, body: { accountStatus: 'inactive' } });
-  assert(r.status === 404, 'Admin accounts cannot be changed through the consultants API');
+  r = await api('/api/admin/consultant/password', { method: 'PUT', cookie: consultant, body: { password: PASSWORD } });
+  assert(r.status === 401, 'Consultant cannot reset passwords through the admin API');
+  await api('/api/admin/consultant/password', { method: 'PUT', cookie: admin, body: { password: PASSWORD } });
+  consultant = (await login('consultant', CONSULTANT_EMAIL)).cookie;
+  assert((await api('/admin/dashboard/consultant', { cookie: admin })).text.includes('Test Consultant'), 'Consultant page shows the account');
 
   // --- Change own password ---
   const secondSession = (await login('consultant', CONSULTANT_EMAIL)).cookie;

@@ -1,6 +1,6 @@
 import 'server-only';
 import { getBookingById } from '@/features/booking/booking.repository';
-import { listPortalUsersByRole } from '@/features/auth/portal-user.repository';
+import { getConsultantAccount } from '@/features/auth/portal-user.repository';
 import { getSetting } from '@/features/settings/settings.repository';
 import { createRescheduleToken } from '@/features/reschedule/reschedule.repository';
 import { formatAmount } from '@/features/payments/format-amount';
@@ -50,8 +50,10 @@ async function bookingVariables(booking) {
   };
 }
 
+/** The consultant's email (single consultant), if the account exists and is active */
 async function activeConsultantEmails() {
-  return (await listPortalUsersByRole('consultant')).filter((c) => c.accountStatus === 'active').map((c) => c.email);
+  const consultant = await getConsultantAccount();
+  return consultant && consultant.accountStatus === 'active' ? [consultant.email] : [];
 }
 
 async function sendToCustomerAndConsultants({ booking, customerTemplate, consultantTemplate, customerVariables, consultantVariables }) {

@@ -5,12 +5,10 @@ import Link from 'next/link';
 import FormField from '@/components/portal/form/FormField';
 import FormStatus from '@/components/portal/form/FormStatus';
 import useJsonSubmit from '@/components/portal/form/useJsonSubmit';
-import { timeToMinutes, formatTimeLabel } from '@/features/schedule/slot-engine';
-
-const DURATION_OPTIONS = [15, 20, 30, 45, 60, 90, 120];
+import { timeToMinutes, formatTimeLabel, SLOT_MINUTES } from '@/features/schedule/slot-engine';
 
 /**
- * Consultant schedule: fee, booking window and consultation length.
+ * Consultant schedule: fee and booking window. Hours and 30-minute slots are fixed.
  * Business hours are fixed (same every day); days off are set on the Availability page.
  * Saves to PUT /api/consultant/schedule.
  *
@@ -20,13 +18,12 @@ export default function ScheduleSettingsForm({ initialRules, businessHours, time
   const [rules, setRules] = React.useState({
     consultationFeeRupees: String(initialRules.consultationFeePaise / 100),
     bookingWindowDays: String(initialRules.bookingWindowDays),
-    slotDurationMinutes: String(initialRules.slotDurationMinutes),
   });
   const [warning, setWarning] = React.useState('');
   const { submit, isSubmitting, status, fieldErrors } = useJsonSubmit();
 
   const setRule = (name, value) => setRules((prev) => ({ ...prev, [name]: value }));
-  const duration = Number(rules.slotDurationMinutes);
+  const duration = SLOT_MINUTES;
   const slotsPerDay = businessHours.reduce(
     (total, range) => total + Math.floor((timeToMinutes(range.endTime) - timeToMinutes(range.startTime)) / duration),
     0
@@ -45,7 +42,6 @@ export default function ScheduleSettingsForm({ initialRules, businessHours, time
         rules: {
           consultationFeeRupees: Number(rules.consultationFeeRupees),
           bookingWindowDays: Number(rules.bookingWindowDays),
-          slotDurationMinutes: Number(rules.slotDurationMinutes),
         },
       },
       'Saved — customers see the change immediately'
@@ -84,20 +80,9 @@ export default function ScheduleSettingsForm({ initialRules, businessHours, time
             hint="How many days customers can book ahead, counting today. 7 = today + the next 6 days."
             disabled={isSubmitting}
           />
-          <FormField
-            name="slotDurationMinutes"
-            type="select"
-            label="Consultation length"
-            options={DURATION_OPTIONS.map((m) => ({ value: String(m), label: `${m} minutes` }))}
-            value={rules.slotDurationMinutes}
-            onChange={setRule}
-            error={fieldErrors.slotDurationMinutes}
-            hint={`Each slot is this long. With these settings: ${slotsPerDay} slots per day.`}
-            disabled={isSubmitting}
-          />
         </div>
         <p className="field-hint" style={{ marginTop: 18 }}>
-          <strong>Hours:</strong> every day, {hoursText} ({timezone}). To take a day or time off, use{' '}
+          <strong>Hours:</strong> every day, {hoursText} ({timezone}) — {slotsPerDay} consultations of {duration} minutes. To take a day or time off, use{' '}
           <Link href={availabilityPath}>Availability</Link>.
         </p>
       </section>

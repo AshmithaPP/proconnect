@@ -30,7 +30,7 @@ export const EMAIL_TEMPLATES = {
   },
   booking_notification_consultant: {
     templateName: 'New booking — to consultant',
-    description: 'Sent to every active consultant account when a booking is paid.',
+    description: 'Sent to the consultant when a booking is paid.',
     recipientLabel: 'Consultant',
     variables: [
       'client_name', 'company_name', 'client_email', 'client_phone', 'client_role', 'team_size',
@@ -71,7 +71,7 @@ export const EMAIL_TEMPLATES = {
   },
   booking_rescheduled_consultant: {
     templateName: 'Time changed — to consultant',
-    description: 'Sent to every active consultant when a booking moves to a new time.',
+    description: 'Sent to the consultant when a booking moves to a new time.',
     recipientLabel: 'Consultant',
     variables: [
       'client_name', 'company_name', 'client_email', 'client_phone', 'previous_slot_time', 'slot_time',
@@ -102,7 +102,7 @@ export const EMAIL_TEMPLATES = {
   },
   booking_reschedule_pending_consultant: {
     templateName: 'No free time yet — to consultant',
-    description: 'Sent to consultants when a paid booking could not be moved automatically because no slot is free in the next 30 days.',
+    description: 'Sent to the consultant when a paid booking could not be moved automatically because no slot is free in the next 30 days.',
     recipientLabel: 'Consultant',
     variables: ['client_name', 'company_name', 'client_email', 'client_phone', 'previous_slot_time', 'booking_reference', ...SITE_VARIABLES],
     defaultSubject: 'Action: no free slot for {{client_name}} ({{booking_reference}})',

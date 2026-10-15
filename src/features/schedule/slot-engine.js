@@ -16,7 +16,10 @@ export const BUSINESS_HOURS = [
   { startTime: '14:00', endTime: '22:00' },
 ];
 
-/** @typedef {{ bookingWindowDays: number, slotDurationMinutes: number }} BookingRules */
+/** Every consultation is 30 minutes: 10:00–10:30, 10:30–11:00 … 9:30–10:00 PM */
+export const SLOT_MINUTES = 30;
+
+/** @typedef {{ bookingWindowDays: number, slotDurationMinutes?: number }} BookingRules */
 /** @typedef {{ startTime: string, endTime: string }} HoursRange */
 /** @typedef {{ timeOffId: string, offDate: string, startTime: string|null, endTime: string|null, timeOffReason?: string|null }} TimeOff */
 /** @typedef {{ bookingId: string, consultationDate: string, slotStartTime: string, slotEndTime: string, fullName?: string, companyName?: string }} BookedSlot */
@@ -125,7 +128,7 @@ export function buildAvailability({ rules, timeOff, bookings, timezone, now = ne
   const zonedNow = getZonedNow(timezone, now);
   const startDate = fromDate || zonedNow.date;
   const dayCount = days || rules.bookingWindowDays;
-  const duration = rules.slotDurationMinutes;
+  const duration = rules.slotDurationMinutes || SLOT_MINUTES;
   const ranges = businessHours
     .map((h) => ({ start: timeToMinutes(h.startTime), end: timeToMinutes(h.endTime) }))
     .sort((a, b) => a.start - b.start);

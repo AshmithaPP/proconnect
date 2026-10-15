@@ -12,10 +12,12 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import { assertTestDatabase } from './helpers/test-db.js';
 import mysql from 'mysql2/promise';
 import { createRealDataGuard } from './helpers/real-data-guard.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
+assertTestDatabase();
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const ORIGIN = new URL(BASE_URL).origin;
@@ -117,15 +119,14 @@ async function run() {
 
   // --- Pages render in both portals ---
   for (const [path, cookie, marker] of [
-    ['/consultant/dashboard', consultant, 'Revenue this month'],
-    ['/consultant/dashboard?range=7', consultant, /class="viz-segment active"[^>]*href="\/consultant\/dashboard\?range=7"/],
+    ['/consultant/dashboard', consultant, 'Welcome back'],
     ['/consultant/dashboard/bookings', consultant, 'Needs reschedule'],
     ['/consultant/dashboard/availability', consultant, 'Availability'],
-    ['/consultant/dashboard/schedule', consultant, 'Consultation length'],
+    ['/consultant/dashboard/schedule', consultant, 'Booking window'],
     ['/admin/dashboard', admin, 'Business analytics'],
     ['/admin/dashboard/bookings', admin, 'Needs reschedule'],
     ['/admin/dashboard/availability', admin, 'Availability'],
-    ['/admin/dashboard/schedule', admin, 'Consultation length'],
+    ['/admin/dashboard/schedule', admin, 'Booking window'],
   ]) {
     const r = await api(path, { cookie });
     assert(r.status === 200 && (marker instanceof RegExp ? marker.test(r.text) : r.text.includes(marker)), `${path} renders`, r.status);
@@ -134,21 +135,21 @@ async function run() {
   // --- Validation ---
   let r = await api('/api/consultant/schedule', {
     method: 'PUT', cookie: consultant,
-    body: { rules: { consultationFeeRupees: 0, bookingWindowDays: 0, slotDurationMinutes: 5 } },
+    body: { rules: { consultationFeeRupees: 0, bookingWindowDays: 0 } },
   });
-  assert(r.status === 400 && r.data.fieldErrors?.consultationFeeRupees && r.data.fieldErrors?.bookingWindowDays && r.data.fieldErrors?.slotDurationMinutes,
-    'Invalid fee / window / consultation length rejected', r.data);
+  assert(r.status === 400 && r.data.fieldErrors?.consultationFeeRupees && r.data.fieldErrors?.bookingWindowDays,
+    'Invalid fee / window rejected', r.data);
   r = await api('/api/consultant/schedule', { cookie: consultant });
-  assert(r.data.businessHours?.length === 2 && !('minNoticeMinutes' in r.data.rules) && !('slotGapMinutes' in r.data.rules) && !('weeklyHours' in r.data),
-    'Schedule API has fixed business hours and no notice / break / weekly hours', r.data);
+  assert(r.data.businessHours?.length === 2 && !('minNoticeMinutes' in r.data.rules) && !('slotGapMinutes' in r.data.rules) && !('weeklyHours' in r.data) && r.data.rules.slotDurationMinutes === 30,
+    'Schedule API: fixed hours, fixed 30-minute slots, no notice / break / weekly hours', r.data);
 
-  // --- New rules: 60-min consultations, 10-day window, ₹1,499 ---
-  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 60 } } });
+  // --- New rules: 10-day window, ₹1,499 ---
+  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10 } } });
   assert(r.status === 200 && r.data.rules.consultationFeePaise === 149900, 'Rules saved (fee stored in paise)', r.data);
 
   let availability = await publicAvailability();
   assert(availability.days.length === 10, 'Customers now see a 10-day window', availability.days.length);
-  assert(availability.fee.amountPaise === 149900 && availability.slotDurationMinutes === 60, 'Public availability shows the new fee and length');
+  assert(availability.fee.amountPaise === 149900 && availability.slotDurationMinutes === 30, 'Public availability shows the new fee and 30-minute slots');
   assert(availability.days.every((d) => !d.isClosed), 'Every day is open (no weekly closed days)');
   const home = await api('/');
   assert(home.status === 200, 'Landing page renders with the booking calendar');
@@ -162,9 +163,9 @@ async function run() {
     }
   }
   if (!dayC) throw new Error('No day without real bookings in the window — refusing to run');
-  assert(dayC.slots.map((s) => s.label).join(' | ') ===
-    '10:00 AM – 11:00 AM | 11:00 AM – 12:00 PM | 12:00 PM – 1:00 PM | 2:00 PM – 3:00 PM | 3:00 PM – 4:00 PM | 4:00 PM – 5:00 PM | 5:00 PM – 6:00 PM | 6:00 PM – 7:00 PM | 7:00 PM – 8:00 PM | 8:00 PM – 9:00 PM | 9:00 PM – 10:00 PM',
-    '60-min slots 10 AM–10 PM, none at 1–2 PM', dayC.slots.map((s) => s.label));
+  assert(dayC.slots.length === 22 && dayC.slots[0].label === '10:00 AM – 10:30 AM' && dayC.slots[5].label === '12:30 PM – 1:00 PM' &&
+    dayC.slots[6].label === '2:00 PM – 2:30 PM' && dayC.slots[21].label === '9:30 PM – 10:00 PM',
+    '22 slots of 30 minutes, 10 AM–10 PM, none at 1–2 PM', dayC.slots.map((s) => s.label));
 
   // --- Booking uses the consultant's fee ---
   const slotA = dayC.slots[0].slotKey;
@@ -173,10 +174,10 @@ async function run() {
     'New booking is dated and charged the consultant fee', r.data);
 
   // --- Block one slot ---
-  const slotB = dayC.slots[1]; // 11:00–12:00
+  const slotB = dayC.slots[1]; // 10:30–11:00
   r = await api('/api/consultant/time-off', {
     method: 'POST', cookie: consultant,
-    body: { offDate: dayC.date, startTime: '11:00', endTime: '12:00', timeOffReason: 'Dentist' },
+    body: { offDate: dayC.date, startTime: '10:30', endTime: '11:00', timeOffReason: 'Dentist' },
   });
   assert(r.status === 201 && r.data.timeOffId, 'Consultant blocks one slot', r.data);
   const slotOffId = r.data.timeOffId;
@@ -199,10 +200,10 @@ async function run() {
   const blockedDay = availability.days.find((d) => d.date === dayC.date);
   assert(blockedDay.isClosed && blockedDay.availableCount === 0, 'Whole day shows as closed to customers');
   await api(`/api/consultant/time-off/${dayOffId}`, { method: 'DELETE', cookie: admin });
-  assert((await publicAvailability()).days.find((d) => d.date === dayC.date).availableCount === 11, 'Day reopened (11 slots)');
+  assert((await publicAvailability()).days.find((d) => d.date === dayC.date).availableCount === 22, 'Day reopened (22 slots)');
 
   // --- A paid booking is never dropped by blocking ---
-  const paidSlot = dayC.slots[2].slotKey; // 12:00–13:00
+  const paidSlot = dayC.slots[2].slotKey; // 11:00–11:30
   r = await api('/api/bookings', { method: 'POST', body: bookingBody(paidSlot) });
   const paidBookingId = r.data.booking?.bookingId;
   await db.execute(`UPDATE booking_payments SET payment_status = 'paid', paid_at = NOW(), provider_payment_id = ? WHERE booking_id = ?`, [`TEST_${stamp}`, paidBookingId]);
@@ -210,17 +211,23 @@ async function run() {
   assert(findSlot((await publicAvailability()).days, paidSlot).status === 'booked', 'Paid booking shows as booked');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date } });
   assert(r.status === 409 && r.data.canAutoMove && r.data.clashingBookings?.[0]?.bookingId === paidBookingId, 'Whole-day block asks before moving a paid booking', r.data);
-  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date, startTime: '12:00', endTime: '13:00' } });
+  r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: dayC.date, startTime: '11:00', endTime: '11:30' } });
   assert(r.status === 409, 'Blocking the booked slot asks first too');
   r = await api('/api/consultant/time-off', { method: 'POST', cookie: consultant, body: { offDate: '2020-01-01' } });
   assert(r.status === 400, 'Past dates cannot be blocked');
 
-  // --- Changing the consultation length keeps existing bookings ---
-  r = await api('/api/consultant/schedule', { method: 'PUT', cookie: consultant, body: { rules: { consultationFeeRupees: 1499, bookingWindowDays: 10, slotDurationMinutes: 45 } } });
-  assert(r.status === 200, 'Consultation length changed to 45 minutes');
+  // --- Only a PAID booking takes a slot (e.g. a booking whose payment row was deleted does not) ---
+  const orphanSlot = dayC.slots[4].slotKey;
+  r = await api('/api/bookings', { method: 'POST', body: bookingBody(orphanSlot) });
+  const orphanId = r.data.booking?.bookingId;
+  await db.execute(`DELETE FROM booking_payments WHERE booking_id = ?`, [orphanId]);
+  await db.execute(`UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`, [orphanId]);
+  assert(findSlot((await publicAvailability()).days, orphanSlot).status === 'available', 'A confirmed booking with no paid payment does not block its slot');
   r = await api('/api/consultant/availability?days=10', { cookie: consultant });
-  const kept = r.data.days.flatMap((d) => d.slots).find((s) => s.booking?.bookingId === paidBookingId);
-  assert(kept?.status === 'booked', 'The paid booking is kept and still shown as booked');
+  assert(!r.data.days.flatMap((d) => d.slots).some((s) => s.booking?.bookingId === orphanId), 'It is not shown as booked in the consultant calendar');
+  r = await api('/api/bookings', { method: 'POST', body: bookingBody(orphanSlot) });
+  assert(r.status === 201, 'Customers can book that slot');
+
 
   // --- Bookings views + analytics ---
   r = await api('/api/consultant/bookings?view=upcoming', { cookie: consultant });

@@ -7,9 +7,11 @@
  * straight to the DB the same way markBookingPaymentSucceeded does.
  */
 import dotenv from 'dotenv';
+import { assertTestDatabase } from './helpers/test-db.js';
 import mysql from 'mysql2/promise';
 
 dotenv.config({ path: '.env.local', quiet: true });
+assertTestDatabase();
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const ORIGIN = new URL(BASE_URL).origin;
@@ -141,7 +143,7 @@ async function run() {
     'Checkout returns a real Worldline hosted page URL', checkout);
 
   if (checkout.redirectUrl) {
-    const hostedPage = await fetch(checkout.redirectUrl);
+    const hostedPage = await fetch(checkout.redirectUrl, { signal: AbortSignal.timeout(60000) });
     assert(hostedPage.status === 200, 'Worldline hosted payment page loads', hostedPage.status);
   }
 

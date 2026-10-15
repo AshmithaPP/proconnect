@@ -14,6 +14,8 @@ const { default: mysql } = await import('mysql2/promise');
 const { default: bcrypt } = await import('bcryptjs');
 const { randomUUID } = await import('crypto');
 dotenv.config({ path: '.env.local', quiet: true });
+const { assertTestDatabase } = await import('./helpers/test-db.js');
+assertTestDatabase();
 const db = await mysql.createConnection({
   host: process.env.DB_HOST || 'localhost',
   port: Number(process.env.DB_PORT) || 3306,

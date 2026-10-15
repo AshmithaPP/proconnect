@@ -17,7 +17,7 @@ export const PORTAL_NAVIGATION = {
     {
       sectionTitle: 'PLATFORM',
       items: [
-        { label: 'Consultants', href: '/admin/dashboard/consultants', icon: 'users' },
+        { label: 'Consultant', href: '/admin/dashboard/consultant', icon: 'users' },
         { label: 'Settings', href: '/admin/dashboard/settings/general', activePrefix: '/admin/dashboard/settings', icon: 'settings' },
         { label: 'Email Templates', href: '/admin/dashboard/email-templates', icon: 'mail' },
       ],

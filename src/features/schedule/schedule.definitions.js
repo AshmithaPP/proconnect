@@ -6,7 +6,6 @@
 
 export const BOOKING_RULES_DEFAULTS = {
   bookingWindowDays: 7,
-  slotDurationMinutes: 30,
   consultationFeePaise: 99900,
 };
 
@@ -20,7 +19,6 @@ export const MAX_CUSTOMER_RESCHEDULES = 2;
 
 export const BOOKING_RULE_LIMITS = {
   bookingWindowDays: { min: 1, max: 60, label: 'Booking window' },
-  slotDurationMinutes: { min: 15, max: 240, label: 'Slot length' },
 };
 
 const MAX_FEE_PAISE = 10000000; // ₹1,00,000

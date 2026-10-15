@@ -3,12 +3,12 @@ import crypto from 'crypto';
 import { query } from '@/lib/db';
 import { readStoredSetting, writeSetting, getSetting } from '@/features/settings/settings.repository';
 import { BOOKING_RULES_DEFAULTS } from '@/features/schedule/schedule.definitions';
-import { buildAvailability, addDays, getZonedNow, BUSINESS_HOURS } from '@/features/schedule/slot-engine';
+import { buildAvailability, addDays, getZonedNow, BUSINESS_HOURS, SLOT_MINUTES } from '@/features/schedule/slot-engine';
 
 const BOOKING_RULES_KEY = 'booking_rules';
 
 /**
- * Booking rules set by the consultant (fee, booking window, slot length, reschedule limits).
+ * Booking rules set by the consultant (fee, booking window). Slots are always 30 minutes.
  * The fee falls back to CONSULTATION_FEE_PAISE from .env until the consultant saves one.
  * Only known rules are returned (keys of settings that no longer exist are ignored).
  */
@@ -22,7 +22,7 @@ export async function getBookingRules() {
   for (const key of Object.keys(BOOKING_RULES_DEFAULTS)) {
     if (stored[key] !== undefined) rules[key] = stored[key];
   }
-  return rules;
+  return { ...rules, slotDurationMinutes: SLOT_MINUTES };
 }
 
 /** @param {typeof BOOKING_RULES_DEFAULTS} rules - validated */
@@ -78,7 +78,8 @@ export async function removeTimeOffForDate(offDate) {
 }
 
 /**
- * Confirmed bookings between two dates — the slots they occupy.
+ * Bookings that occupy a slot between two dates: confirmed AND with a paid payment. A booking
+ * whose payment row was deleted (or never paid) never blocks a slot.
  * @param {string} fromDate
  * @param {string} toDate
  * @param {import('mysql2/promise').PoolConnection} [conn] - inside a transaction, locks the rows
@@ -88,7 +89,8 @@ export async function listConfirmedBookingSlots(fromDate, toDate, conn) {
             DATE_FORMAT(consultation_date, '%Y-%m-%d') AS consultation_date,
             TIME_FORMAT(slot_start_time, '%H:%i') AS slot_start_time, TIME_FORMAT(slot_end_time, '%H:%i') AS slot_end_time
      FROM consultation_bookings
-     WHERE booking_status = 'confirmed' AND consultation_date BETWEEN ? AND ?${conn ? ' FOR UPDATE' : ''}`;
+     WHERE booking_status = 'confirmed' AND consultation_date BETWEEN ? AND ?
+       AND EXISTS (SELECT 1 FROM booking_payments paid WHERE paid.booking_id = consultation_bookings.booking_id AND paid.payment_status = 'paid')${conn ? ' FOR UPDATE' : ''}`;
   const rows = conn ? (await conn.execute(sql, [fromDate, toDate]))[0] : await query(sql, [fromDate, toDate]);
   return rows.map((row) => ({
     bookingId: row.booking_id,

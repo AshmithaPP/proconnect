@@ -1,7 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
+import { FiArrowRight } from 'react-icons/fi';
 import { requirePortalUser } from '@/features/auth/require-portal-user';
-import { listPortalUsersByRole } from '@/features/auth/portal-user.repository';
+import { getConsultantAccount } from '@/features/auth/portal-user.repository';
 import { getPaidBookingStats } from '@/features/booking/booking.repository';
 import { getPaymentMode, getWorldlineConfig } from '@/features/payments/payment.config';
 import { getBookingRules } from '@/features/schedule/schedule.repository';
@@ -27,15 +28,14 @@ export default async function AdminDashboardPage({ searchParams }) {
   const { user } = await requirePortalUser('admin');
   const resolvedSearchParams = await searchParams;
 
-  const [consultants, stats, bookingRules] = await Promise.all([
-    listPortalUsersByRole('consultant'),
+  const [consultant, stats, bookingRules] = await Promise.all([
+    getConsultantAccount(),
     getPaidBookingStats(),
     getBookingRules(),
   ]);
 
   const paymentMode = getPaymentMode();
   const isSandbox = getWorldlineConfig().baseUrl.includes('.preprod.');
-  const activeConsultants = consultants.filter((c) => c.accountStatus === 'active').length;
 
   return (
     <div className="admin-dashboard-full">
@@ -63,12 +63,12 @@ export default async function AdminDashboardPage({ searchParams }) {
       <div className="admin-kpi-grid">
         <div className="admin-info-card">
           <div className="card-top-row">
-            <span className="card-label">Consultant Accounts</span>
-            <span className="card-pill-tag tag-green">Active</span>
+            <span className="card-label">Consultant</span>
+            <span className={`card-pill-tag${consultant ? ' tag-green' : ''}`}>{consultant ? 'Set up' : 'Missing'}</span>
           </div>
-          <div className="card-val">{activeConsultants}</div>
+          <div className="card-val">{consultant ? consultant.fullName : 'Not created'}</div>
           <div className="card-subtext">
-            {consultants.length} in total · <Link href="/admin/dashboard/consultants">Manage →</Link>
+            {consultant ? consultant.email : 'Create the consultant account'} · <Link href="/admin/dashboard/consultant">Manage →</Link>
           </div>
         </div>
 

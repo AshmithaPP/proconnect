@@ -139,6 +139,15 @@ async function createPortalUser() {
   });
 
   try {
+    // Single consultant: never create a second one
+    if (role.userRole === 'consultant') {
+      const [consultants] = await conn.execute("SELECT email FROM portal_users WHERE user_role = 'consultant' LIMIT 1");
+      if (consultants.length > 0) {
+        console.error(`\nError: a consultant account already exists (${consultants[0].email}). Edit it in the admin portal → Consultant.`);
+        process.exit(1);
+      }
+    }
+
     // Emails are unique across both portals
     const [existing] = await conn.execute('SELECT portal_user_id FROM portal_users WHERE email = ?', [email]);
     if (existing.length > 0) {

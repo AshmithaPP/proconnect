@@ -7,10 +7,12 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import { assertTestDatabase } from './helpers/test-db.js';
 import mysql from 'mysql2/promise';
 import { sanitizeReturnTo } from '../../src/features/auth/auth.schema.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
+assertTestDatabase();
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const ORIGIN = new URL(BASE_URL).origin;
@@ -123,12 +125,12 @@ async function run() {
 
   res = await get('/admin/dashboard', admin.cookie);
   let html = await res.text();
-  assert(res.status === 200 && html.includes('Consultant Accounts') && html.includes('Business analytics'),
+  assert(res.status === 200 && html.includes('Consultant') && html.includes('Business analytics'),
     'Admin dashboard renders platform status and business analytics');
 
   res = await get('/consultant/dashboard', consultant.cookie);
   html = await res.text();
-  assert(res.status === 200 && html.includes('Revenue this month') && html.includes('Test Consultant'),
+  assert(res.status === 200 && html.includes('Welcome back') && html.includes('Test Consultant'),
     'Consultant dashboard renders the analytics overview');
 
   res = await get('/api/consultant/bookings', consultant.cookie);

@@ -160,6 +160,20 @@ export async function markBookingPaymentSucceeded({
       [paymentProvider, providerPaymentId, providerOrderId, payment.payment_id]
     );
 
+    // A booking marked confirmed but with no paid payment (e.g. its payment row was deleted)
+    // does not really hold its slot — release it so it cannot block this paid booking
+    await conn.execute(
+      `UPDATE consultation_bookings b
+       JOIN consultation_bookings mine ON mine.booking_id = ?
+       SET b.booking_status = 'cancelled'
+       WHERE b.booking_id <> mine.booking_id
+         AND b.booking_status = 'confirmed'
+         AND b.consultation_date = mine.consultation_date
+         AND b.slot_start_time = mine.slot_start_time
+         AND NOT EXISTS (SELECT 1 FROM booking_payments bp WHERE bp.booking_id = b.booking_id AND bp.payment_status = 'paid')`,
+      [bookingId]
+    );
+
     let outcome = 'paid';
     try {
       await conn.execute(`UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`, [bookingId]);

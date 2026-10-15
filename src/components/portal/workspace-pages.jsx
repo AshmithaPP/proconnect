@@ -57,7 +57,7 @@ export async function SchedulePage({ portalKey }) {
   const [rules, timezone] = await Promise.all([getBookingRules(), getBusinessTimezone()]);
   return (
     <div className="admin-dashboard-full">
-      <PageHead title="Schedule & Pricing" subtitle="Your fee, how far ahead customers can book, and how long a consultation is." />
+      <PageHead title="Schedule & Pricing" subtitle="Your fee and how far ahead customers can book." />
       <ScheduleSettingsForm
         initialRules={rules}
         businessHours={BUSINESS_HOURS}

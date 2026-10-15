@@ -31,25 +31,30 @@ export async function updatePortalUserLastLogin(portalUserId) {
 }
 
 /**
- * List accounts with a given role (no password hashes)
- * @param {'platform_admin' | 'consultant'} userRole
+ * THE consultant account. The site has a single consultant (one calendar, one login); if more
+ * than one consultant row ever exists, the oldest is the consultant.
+ * @returns {Promise<{ portalUserId: string, fullName: string, email: string, accountStatus: string,
+ *   createdAt: Date, lastLoginAt: Date|null } | null>} (no password hash)
  */
-export async function listPortalUsersByRole(userRole) {
+export async function getConsultantAccount() {
   const rows = await query(
     `SELECT portal_user_id, full_name, email, account_status, created_at, last_login_at
      FROM portal_users
-     WHERE user_role = ?
-     ORDER BY created_at ASC`,
-    [userRole]
+     WHERE user_role = 'consultant'
+     ORDER BY created_at ASC
+     LIMIT 1`
   );
-  return rows.map((row) => ({
-    portalUserId: row.portal_user_id,
-    fullName: row.full_name,
-    email: row.email,
-    accountStatus: row.account_status,
-    createdAt: row.created_at,
-    lastLoginAt: row.last_login_at,
-  }));
+  const row = rows[0];
+  return row
+    ? {
+        portalUserId: row.portal_user_id,
+        fullName: row.full_name,
+        email: row.email,
+        accountStatus: row.account_status,
+        createdAt: row.created_at,
+        lastLoginAt: row.last_login_at,
+      }
+    : null;
 }
 
 /**
