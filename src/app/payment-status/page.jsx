@@ -4,6 +4,7 @@ import { CheckCircleIcon } from '@/components/ui/Icons';
 import { getBookingById } from '@/features/booking/booking.repository';
 import { formatAmount } from '@/features/payments/format-amount';
 import { reconcileWorldlineBooking } from '@/features/payments/worldline.reconcile';
+import { formatDateLabel } from '@/features/schedule/slot-engine';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,13 +46,18 @@ export default async function PaymentStatusPage({ searchParams }) {
     }
   }
 
-  // paid | pending | cancelled | no_payment | null (unknown booking)
+  // paid | reschedule_required | pending | cancelled | no_payment | null (unknown booking)
   const dbStatus = booking?.status || null;
   const isSuccess = dbStatus === 'paid';
+  // Paid, but someone else's payment for the same slot was confirmed a moment earlier
+  const isReschedule = dbStatus === 'reschedule_required';
   const isProcessing = dbStatus === 'pending' && requestedStatus === 'processing';
   const isCancelled = dbStatus === 'cancelled' && requestedStatus === 'cancelled';
   const bookingId = booking?.bookingId || '';
-  const paymentId = isSuccess ? booking.payment.providerPaymentId || '' : '';
+  const paymentId = isSuccess || isReschedule ? booking.payment.providerPaymentId || '' : '';
+  const consultationLabel = booking?.consultationDate
+    ? `${formatDateLabel(booking.consultationDate)}, ${booking.preferredTimeSlot}`
+    : '';
   const amountLabel = booking?.payment
     ? `${formatAmount(booking.payment.amountPaise, booking.payment.currencyCode)} ${booking.payment.currencyCode}`
     : '—';
@@ -65,8 +71,8 @@ export default async function PaymentStatusPage({ searchParams }) {
             <div style={styles.successIcon}>
               <CheckCircleIcon />
             </div>
-          ) : isCancelled || isProcessing ? (
-            <div style={styles.cancelledIcon}>{isProcessing ? '⏳' : '⊘'}</div>
+          ) : isCancelled || isProcessing || isReschedule ? (
+            <div style={styles.cancelledIcon}>{isProcessing || isReschedule ? '⏳' : '⊘'}</div>
           ) : (
             <div style={styles.failedIcon}>✗</div>
           )}
@@ -76,6 +82,8 @@ export default async function PaymentStatusPage({ searchParams }) {
         <h1 style={styles.title}>
           {isSuccess
             ? 'Consultation Booking Confirmed!'
+            : isReschedule
+            ? 'Payment Received — New Time Needed'
             : isProcessing
             ? 'Payment Processing'
             : isCancelled
@@ -86,6 +94,8 @@ export default async function PaymentStatusPage({ searchParams }) {
         <p style={styles.subtitle}>
           {isSuccess
             ? 'Your payment was successfully verified with Worldline. A confirmation has been registered.'
+            : isReschedule
+            ? 'Your payment was successful, but this time slot was booked by someone else moments before. Your payment is safe — we will contact you to choose a new time.'
             : isProcessing
             ? 'Worldline has not confirmed your payment yet. Please refresh this page in a minute — do not pay again.'
             : isCancelled
@@ -106,6 +116,12 @@ export default async function PaymentStatusPage({ searchParams }) {
               <span style={styles.receiptLabel}>Payment Gateway:</span>
               <span style={styles.receiptValue}>Worldline Connect</span>
             </div>
+            {consultationLabel && (
+              <div style={styles.receiptRow}>
+                <span style={styles.receiptLabel}>Consultation:</span>
+                <span style={styles.receiptValue}>{consultationLabel}</span>
+              </div>
+            )}
             {paymentId && (
               <div style={styles.receiptRow}>
                 <span style={styles.receiptLabel}>Worldline Transaction ID:</span>
@@ -121,10 +137,10 @@ export default async function PaymentStatusPage({ searchParams }) {
               <span
                 style={{
                   ...styles.statusBadge,
-                  ...(isSuccess ? styles.statusBadgeSuccess : styles.statusBadgeFailed),
+                  ...(isSuccess || isReschedule ? styles.statusBadgeSuccess : styles.statusBadgeFailed),
                 }}
               >
-                {isSuccess ? 'PAID & CONFIRMED' : isProcessing ? 'PROCESSING' : isCancelled ? 'CANCELLED' : 'FAILED'}
+                {isSuccess ? 'PAID & CONFIRMED' : isReschedule ? 'PAID · RESCHEDULE NEEDED' : isProcessing ? 'PROCESSING' : isCancelled ? 'CANCELLED' : 'FAILED'}
               </span>
             </div>
           </div>
@@ -132,7 +148,7 @@ export default async function PaymentStatusPage({ searchParams }) {
 
         {/* Actions */}
         <div style={styles.actionGroup}>
-          {isSuccess ? (
+          {isSuccess || isReschedule ? (
             <Link href="/" style={styles.primaryBtn}>
               Return to Homepage
             </Link>

@@ -6,6 +6,8 @@ import 'server-only';
  * PAYMENT_MODE:
  *  - "worldline" → Worldline Connect Hosted Checkout (pre-production or live, per WORLDLINE_BASE_URL).
  *  - "disabled"  → bookings are stored as pending_payment and nothing marks them paid.
+ *
+ * The consultation fee is a consultant setting (Schedule & Pricing), see schedule.repository.
  */
 
 export function getPaymentMode() {
@@ -19,13 +21,5 @@ export function getWorldlineConfig() {
     merchantId: process.env.WORLDLINE_MERCHANT_ID || '9000000514',
     apiKeyId: process.env.WORLDLINE_API_KEY_ID || '',
     secretApiKey: process.env.WORLDLINE_SECRET_API_KEY || '',
-  };
-}
-
-export function getConsultationFee() {
-  const amountPaise = Number(process.env.CONSULTATION_FEE_PAISE);
-  return {
-    amountPaise: Number.isInteger(amountPaise) && amountPaise > 0 ? amountPaise : 0,
-    currencyCode: 'INR',
   };
 }

@@ -137,7 +137,7 @@ async function run() {
   r = await api('/api/consultant/bookings', { cookie: admin });
   assert(r.status === 200 && Array.isArray(r.data.bookings), 'Admin can read the shared bookings API');
   r = await api('/admin/dashboard/bookings', { cookie: admin });
-  assert(r.status === 200 && r.text.includes('Paid Consultation Bookings'), 'Admin Bookings page shows the consultant bookings view');
+  assert(r.status === 200 && r.text.includes('Needs reschedule'), 'Admin Bookings page shows the consultant bookings view');
 
   // --- Admin pages render ---
   for (const [path, marker] of [

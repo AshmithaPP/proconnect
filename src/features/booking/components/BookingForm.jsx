@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import TimeSlotPicker from './TimeSlotPicker';
+import SlotCalendarPicker from './SlotCalendarPicker';
 import FormTextField from './FormTextField';
 import FormSelectField from './FormSelectField';
 import BookingTrustBadges from './BookingTrustBadges';
@@ -21,13 +21,17 @@ import {
   SALES_TEAM_SIZE_OPTIONS,
   SALES_CHALLENGE_OPTIONS,
 } from '@/features/booking/booking.options';
+import { formatAmount } from '@/features/payments/format-amount';
 
 export default function BookingForm({ onSuccess }) {
   const {
     formData,
     errorMessage,
     isSubmitting,
-    unavailableSlots,
+    availability,
+    isLoadingSlots,
+    selectedDate,
+    handleDateChange,
     handleChange,
     handleSlotChange,
     handleSubmit,
@@ -126,12 +130,16 @@ export default function BookingForm({ onSuccess }) {
         {/* Preferred Time Slot */}
         <div className="col-full">
           <label className="field-label">
-            Preferred Time Slot <span className="req">*</span>
+            Preferred Date &amp; Time <span className="req">*</span>
           </label>
-          <TimeSlotPicker
-            value={formData.timeSlot}
+          <SlotCalendarPicker
+            days={availability.days}
+            selectedDate={selectedDate}
+            onSelectDate={handleDateChange}
+            value={formData.slotKey}
             onChange={handleSlotChange}
-            unavailableSlots={unavailableSlots}
+            isLoading={isLoadingSlots}
+            slotDurationMinutes={availability.slotDurationMinutes}
           />
         </div>
       </div>
@@ -152,7 +160,7 @@ export default function BookingForm({ onSuccess }) {
             cursor: isSubmitting ? 'not-allowed' : 'pointer',
           }}
         >
-          <span>{isSubmitting ? 'Connecting to Secure Worldline Checkout...' : 'Proceed to Worldline Payment (₹999)'}</span>
+          <span>{isSubmitting ? 'Connecting to Secure Worldline Checkout...' : `Proceed to Worldline Payment${availability.fee ? ` (${formatAmount(availability.fee.amountPaise, availability.fee.currencyCode)})` : ''}`}</span>
           {!isSubmitting && <ArrowRightIcon />}
         </button>
       </div>

@@ -4,13 +4,15 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import LogoutButton from '@/features/auth/components/LogoutButton';
-import { DashboardGridIcon, CalendarIcon, UsersIcon, ServerIcon, MailIcon, UserIcon } from '@/components/ui/Icons';
+import { DashboardGridIcon, CalendarIcon, ClockIcon, TrendingUpIcon, UsersIcon, ServerIcon, MailIcon, UserIcon } from '@/components/ui/Icons';
 import { getPortal } from '@/features/auth/portals';
 import { PORTAL_NAVIGATION, isNavItemActive } from '@/features/auth/portal-navigation';
 
 const NAV_ICONS = {
   dashboard: DashboardGridIcon,
   calendar: CalendarIcon,
+  clock: ClockIcon,
+  tune: TrendingUpIcon,
   users: UsersIcon,
   settings: ServerIcon,
   mail: MailIcon,

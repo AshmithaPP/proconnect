@@ -4,10 +4,10 @@ import { getPaymentReturnBaseUrl } from '@/lib/http/app-url';
 import {
   getBookingById,
   updateBookingPaymentOrderId,
-  isSlotTakenByPaidBooking,
   markBookingCancelled,
 } from '@/features/booking/booking.repository';
 import { createHostedCheckoutSession } from '@/features/payments/worldline.client';
+import { checkSlotBookable } from '@/features/schedule/schedule.repository';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -68,13 +68,14 @@ export async function POST(request) {
     );
   }
 
-  // Someone may have paid for the same slot since this booking was created
-  if (await isSlotTakenByPaidBooking(booking.preferredTimeSlot, booking.bookingId)) {
+  // Someone may have paid for the slot, or the consultant blocked it, since this booking was created
+  const slotCheck = await checkSlotBookable(booking.consultationDate, booking.slotStartTime);
+  if (!slotCheck.ok) {
     await markBookingCancelled(booking.bookingId);
     return NextResponse.json(
       {
-        error: `The time slot "${booking.preferredTimeSlot}" was just booked by someone else. Please choose another time slot.`,
-        fieldErrors: { timeSlot: 'This time slot is already reserved.' },
+        error: 'This time slot is no longer available. Please choose another slot.',
+        fieldErrors: { slotKey: 'Please choose another slot' },
       },
       { status: 409, headers: NO_STORE }
     );

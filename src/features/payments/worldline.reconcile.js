@@ -9,7 +9,7 @@ import { sendBookingConfirmationEmails } from '@/features/email/booking-emails';
  *
  * @param {object} booking - from getBookingByProviderOrderId / getBookingById
  * @returns {Promise<{
- *   outcome: 'paid' | 'cancelled' | 'failed' | 'processing' | 'amount_mismatch' | 'booking_cancelled',
+ *   outcome: 'paid' | 'reschedule_required' | 'cancelled' | 'failed' | 'processing' | 'amount_mismatch' | 'booking_cancelled',
  *   paymentId?: string,
  *   reason?: string
  * }>}
@@ -20,7 +20,10 @@ export async function reconcileWorldlineBooking(booking) {
 
   // Already confirmed (e.g. customer refreshed the return URL)
   if (payment?.paymentStatus === 'paid') {
-    return { outcome: 'paid', paymentId: payment.providerPaymentId || '' };
+    return {
+      outcome: booking.bookingStatus === 'reschedule_required' ? 'reschedule_required' : 'paid',
+      paymentId: payment.providerPaymentId || '',
+    };
   }
   if (!hostedCheckoutId) return { outcome: 'processing' };
 
@@ -67,6 +70,10 @@ export async function reconcileWorldlineBooking(booking) {
     // the customer's redirect must not wait on the mail server.
     if (result.outcome === 'paid') {
       void sendBookingConfirmationEmails(bookingId);
+    }
+    if (result.outcome === 'paid_needs_reschedule') {
+      console.warn('[Worldline] Paid booking lost its slot to a concurrent payment — reschedule required:', bookingId);
+      return { outcome: 'reschedule_required', paymentId: verification.paymentId || '' };
     }
     return { outcome: 'paid', paymentId: verification.paymentId || '' };
   }

@@ -6,7 +6,8 @@ import { SETTING_DEFAULTS } from '@/features/settings/settings.definitions';
 
 const PUBLIC_SETTINGS_TAG = 'site-settings';
 
-async function readStoredSetting(settingKey) {
+/** Raw saved JSON document for a key ({} when nothing is saved). Server use only. */
+export async function readStoredSetting(settingKey) {
   const rows = await query(`SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1`, [settingKey]);
   if (!rows.length) return {};
   const raw = rows[0].setting_value;
@@ -14,7 +15,8 @@ async function readStoredSetting(settingKey) {
   return typeof raw === 'string' ? JSON.parse(raw) : raw || {};
 }
 
-async function writeSetting(settingKey, document, updatedByUserId) {
+/** Upsert a JSON document and refresh the public settings cache. Server use only. */
+export async function writeSetting(settingKey, document, updatedByUserId) {
   await query(
     `INSERT INTO site_settings (setting_key, setting_value, updated_by_user_id)
      VALUES (?, CAST(? AS JSON), ?)

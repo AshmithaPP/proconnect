@@ -613,3 +613,186 @@
   text-align: right;
   word-break: break-word;
 }
+
+/* --- Date strip + slot grid (dynamic booking window) --- */
+.slot-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.date-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scroll-snap-type: x proximity;
+}
+
+.date-chip {
+  flex: 0 0 auto;
+  min-width: 74px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 10px 8px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid rgba(20, 20, 20, 0.12);
+  background: #ffffff;
+  font-family: var(--font-body);
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.date-chip:hover {
+  border-color: var(--color-primary);
+}
+
+.date-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  box-shadow: 0 0 0 3px rgba(240, 90, 30, 0.12);
+}
+
+.date-chip.is-full:not(.active) {
+  opacity: 0.55;
+}
+
+.date-chip-weekday {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.date-chip-day {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--color-text);
+}
+
+.date-chip-month {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.date-chip-meta {
+  margin-top: 3px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.date-chip.is-full .date-chip-meta {
+  color: var(--color-text-muted);
+}
+
+.slot-day-panel {
+  border: 1.5px solid rgba(20, 20, 20, 0.08);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: #fffdfa;
+}
+
+.slot-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.slot-day-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.slot-day-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--color-primary);
+}
+
+.slot-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+
+.slot-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(20, 20, 20, 0.12);
+  background: #ffffff;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.slot-chip:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.slot-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.slot-chip.active .slot-chip-icon {
+  color: #ffffff;
+}
+
+.slot-chip-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: var(--color-primary);
+}
+
+.slot-chip.slot-disabled {
+  cursor: not-allowed;
+  background: #f4f2ee;
+  color: #9a958c;
+}
+
+.slot-chip.slot-disabled .slot-chip-time {
+  text-decoration: line-through;
+}
+
+.slot-chip.slot-disabled .slot-chip-icon {
+  color: #b5b0a7;
+}
+
+.slot-chip-tag {
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #a93226;
+}
+
+.slot-calendar-empty {
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: #f7f5f1;
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}

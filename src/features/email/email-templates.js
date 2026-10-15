@@ -70,7 +70,7 @@ export const SAMPLE_VARIABLES = {
   client_role: 'Sales Manager / Head',
   team_size: '6–10 people',
   sales_challenge: 'Low lead conversion',
-  slot_time: '10:30 AM – 11:00 AM',
+  slot_time: 'Fri, 16 Oct 2026, 10:30 AM – 11:00 AM',
   amount: '₹999.00 INR',
   booking_reference: '4A48CF25',
   payment_id: '900000051410000000700000100001',

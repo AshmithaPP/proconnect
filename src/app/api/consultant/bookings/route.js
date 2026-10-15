@@ -1,39 +1,33 @@
-import { NextResponse } from 'next/server';
-import { verifyPortalApiSession } from '@/features/auth/api-guard';
-import { listPaidBookings, getPaidBookingStats } from '@/features/booking/booking.repository';
-
-const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
+import { verifyPortalApiSession, jsonNoStore } from '@/features/auth/api-guard';
+import { listBookingsForView, getBookingViewCounts, BOOKING_VIEW_KEYS } from '@/features/booking/booking.repository';
+import { getBusinessTimezone } from '@/features/schedule/schedule.repository';
+import { getZonedNow } from '@/features/schedule/slot-engine';
 
 /**
- * GET /api/consultant/bookings?page=1&pageSize=20
- * Consultant or platform admin: successfully paid & confirmed bookings (most recently paid first), plus KPI stats.
+ * GET /api/consultant/bookings?view=upcoming|today|past|reschedule&page=1&pageSize=20&q=search
+ * Consultant or platform admin: paid bookings by consultation date (business timezone),
+ * plus the count for each view.
  */
 export async function GET(request) {
   // Shared feature: the platform admin can see everything the consultant can
   const auth = await verifyPortalApiSession(['consultant', 'admin']);
-  if (!auth.authorized) {
-    return auth.response;
-  }
+  if (!auth.authorized) return auth.response;
 
   const { searchParams } = new URL(request.url);
+  const view = BOOKING_VIEW_KEYS.includes(searchParams.get('view')) ? searchParams.get('view') : 'upcoming';
   const page = Number(searchParams.get('page')) || 1;
   const pageSize = Number(searchParams.get('pageSize')) || 20;
+  const search = searchParams.get('q') || '';
 
   try {
-    const [list, stats] = await Promise.all([
-      listPaidBookings({ page, pageSize }),
-      getPaidBookingStats(),
+    const today = getZonedNow(await getBusinessTimezone()).date;
+    const [list, counts] = await Promise.all([
+      listBookingsForView({ view, today, page, pageSize, search }),
+      getBookingViewCounts(today),
     ]);
-
-    return NextResponse.json(
-      { bookings: list.bookings, totalCount: list.totalCount, page, pageSize, stats },
-      { status: 200, headers: NO_STORE }
-    );
+    return jsonNoStore({ view, today, page, pageSize, bookings: list.bookings, totalCount: list.totalCount, counts });
   } catch (err) {
     console.error('Consultant bookings list error:', err.message);
-    return NextResponse.json(
-      { error: 'Could not load bookings' },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
-    );
+    return jsonNoStore({ error: 'Could not load bookings' }, 500);
   }
 }

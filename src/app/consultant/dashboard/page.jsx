@@ -1,6 +1,6 @@
 import React from 'react';
 import { requirePortalUser } from '@/features/auth/require-portal-user';
-import PaidBookingsPanel from '@/features/booking/components/PaidBookingsPanel';
+import AnalyticsDashboard from '@/features/analytics/components/AnalyticsDashboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,13 +32,15 @@ export default async function ConsultantDashboardPage({ searchParams }) {
           <h1 className="dashboard-heading">
             Welcome back, <span className="highlight-text">{user.fullName}</span>
           </h1>
-          <p className="dashboard-sub-heading">
-            Consultations that are successfully paid and booked, most recently paid first.
-          </p>
+          <p className="dashboard-sub-heading">Your bookings, revenue and schedule at a glance.</p>
         </div>
       </div>
 
-      <PaidBookingsPanel basePath="/consultant/dashboard" page={resolvedSearchParams?.page} />
+      <AnalyticsDashboard
+        basePath="/consultant/dashboard"
+        bookingsPath="/consultant/dashboard/bookings"
+        range={resolvedSearchParams?.range}
+      />
     </div>
   );
 }

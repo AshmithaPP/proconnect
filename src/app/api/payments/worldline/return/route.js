@@ -44,6 +44,8 @@ export async function GET(request) {
     const result = await reconcileWorldlineBooking(booking);
 
     switch (result.outcome) {
+      case 'reschedule_required':
+        return NextResponse.redirect(statusUrl({ bookingId, status: 'reschedule' }));
       case 'paid':
         // 4. Redirect to public success receipt page
         return NextResponse.redirect(statusUrl({ bookingId, status: 'success', paymentId: result.paymentId || '' }));

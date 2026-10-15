@@ -3,6 +3,7 @@ import { getBookingById } from '@/features/booking/booking.repository';
 import { listPortalUsersByRole } from '@/features/auth/portal-user.repository';
 import { formatAmount } from '@/features/payments/format-amount';
 import { sendTemplatedEmail } from '@/features/email/mailer';
+import { formatDateLabel } from '@/features/schedule/slot-engine';
 
 const withOther = (value, other) => (value === 'Other' && other ? `Other (${other})` : value || '—');
 
@@ -24,7 +25,7 @@ export async function sendBookingConfirmationEmails(bookingId) {
       client_role: withOther(booking.userRole, booking.userRoleOther),
       team_size: booking.salesTeamSize || '—',
       sales_challenge: withOther(booking.salesChallenge, booking.salesChallengeOther),
-      slot_time: booking.preferredTimeSlot,
+      slot_time: `${formatDateLabel(booking.consultationDate)}, ${booking.preferredTimeSlot}`,
       amount: `${formatAmount(booking.payment.amountPaise, booking.payment.currencyCode)} ${booking.payment.currencyCode}`,
       booking_reference: booking.bookingId.slice(0, 8).toUpperCase(),
       payment_id: booking.payment.providerPaymentId || '—',

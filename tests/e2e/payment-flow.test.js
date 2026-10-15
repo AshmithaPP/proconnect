@@ -8,7 +8,6 @@
  */
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
-import { TIME_SLOTS } from '../../src/features/booking/booking.options.js';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -54,12 +53,20 @@ async function markPaidInDb(bookingId, providerOrderId) {
   await db.execute(`UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`, [bookingId]);
 }
 
+/** slotKeys customers cannot book right now (booked / unavailable) */
 async function unavailableSlots() {
-  const res = await fetch(`${BASE_URL}/api/bookings/slots`);
-  return (await res.json()).unavailableSlots || [];
+  const res = await fetch(`${BASE_URL}/api/bookings/availability`);
+  const { days = [] } = await res.json();
+  return days.flatMap((d) => d.slots).filter((s) => s.status !== 'available').map((s) => s.slotKey);
 }
 
-async function createBooking(timeSlot) {
+async function firstOpenSlotKey() {
+  const res = await fetch(`${BASE_URL}/api/bookings/availability`);
+  const { days = [] } = await res.json();
+  return days.flatMap((d) => d.slots).find((s) => s.status === 'available')?.slotKey;
+}
+
+async function createBooking(slotKey) {
   const res = await fetch(`${BASE_URL}/api/bookings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
@@ -71,7 +78,7 @@ async function createBooking(timeSlot) {
       role: 'CEO / Director',
       teamSize: 'Just me',
       challenge: 'Sales team performance',
-      timeSlot,
+      slotKey,
     }),
   });
   return { status: res.status, data: await res.json() };
@@ -104,8 +111,8 @@ async function run() {
   const simulatorRes = await fetch(`${BASE_URL}/mock-worldline/checkout`);
   assert(simulatorRes.status === 404, 'In-app payment simulator page no longer exists');
 
-  const taken = await unavailableSlots();
-  const slot = TIME_SLOTS.find((s) => !taken.includes(s));
+  const slot = await firstOpenSlotKey();
+  assert(slot, 'An open slot exists in the booking window', slot);
 
   // --- Exploits ---
   const { data: victim } = await createBooking(slot);
@@ -186,6 +193,20 @@ async function run() {
 
   const { status: thirdStatus } = await createBooking(slot);
   assert(thirdStatus === 409, 'New booking on a paid slot is rejected (409)');
+
+  // Database guard: a second confirmed booking for the same date + time is impossible
+  let duplicateError = null;
+  try {
+    await db.execute("UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?", [rivalId]);
+  } catch (err) {
+    duplicateError = err.code;
+  }
+  assert(duplicateError === 'ER_DUP_ENTRY', 'MySQL rejects a second confirmed booking for the same slot', duplicateError);
+
+  const { status: pastStatus } = await createBooking('2020-01-01T10:00');
+  assert(pastStatus === 409, 'A date outside the booking window is rejected');
+  const { status: oddStatus } = await createBooking(slot.replace(/T\d{2}:\d{2}$/, 'T03:17'));
+  assert(oddStatus === 409, 'A time that is not a real slot is rejected');
 }
 
 try {

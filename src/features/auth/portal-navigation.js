@@ -10,6 +10,8 @@ export const PORTAL_NAVIGATION = {
       items: [
         { label: 'Dashboard', href: '/admin/dashboard', icon: 'dashboard', match: 'exact' },
         { label: 'Bookings', href: '/admin/dashboard/bookings', icon: 'calendar' },
+        { label: 'Availability', href: '/admin/dashboard/availability', icon: 'clock' },
+        { label: 'Schedule & Pricing', href: '/admin/dashboard/schedule', icon: 'tune' },
       ],
     },
     {
@@ -28,7 +30,12 @@ export const PORTAL_NAVIGATION = {
   consultant: [
     {
       sectionTitle: 'WORKSPACE',
-      items: [{ label: 'Dashboard', href: '/consultant/dashboard', icon: 'dashboard', match: 'exact' }],
+      items: [
+        { label: 'Dashboard', href: '/consultant/dashboard', icon: 'dashboard', match: 'exact' },
+        { label: 'Bookings', href: '/consultant/dashboard/bookings', icon: 'calendar' },
+        { label: 'Availability', href: '/consultant/dashboard/availability', icon: 'clock' },
+        { label: 'Schedule & Pricing', href: '/consultant/dashboard/schedule', icon: 'tune' },
+      ],
     },
     {
       sectionTitle: 'ACCOUNT',

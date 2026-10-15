@@ -45,7 +45,7 @@ const validBooking = {
   teamSize: '2–5 people',
   challenge: 'Low lead conversion',
   challengeOther: '',
-  timeSlot: '10:00 AM – 10:30 AM',
+  slotKey: '',
 };
 
 async function post(path, body, headers = {}) {
@@ -62,8 +62,8 @@ async function run() {
 
   // 1. Validation rejects bad payload
   {
-    const { res, data } = await post('/api/bookings', { ...validBooking, timeSlot: '3:00 AM', workEmail: 'nope' });
-    assert(res.status === 400 && data.fieldErrors?.workEmail && data.fieldErrors?.timeSlot,
+    const { res, data } = await post('/api/bookings', { ...validBooking, slotKey: '3:00 AM', workEmail: 'nope' });
+    assert(res.status === 400 && data.fieldErrors?.workEmail && data.fieldErrors?.slotKey,
       'Invalid payload rejected with field errors', data);
   }
 
@@ -73,12 +73,11 @@ async function run() {
     assert(res.status === 403, 'Cross-origin booking rejected with 403');
   }
 
-  // 3. Valid booking created as pending (on a slot that is still free today)
-  const slotsRes = await fetch(`${BASE_URL}/api/bookings/slots`);
-  const { unavailableSlots = [] } = await slotsRes.json();
-  const { TIME_SLOTS } = await import('../../src/features/booking/booking.options.js');
-  const freeSlot = TIME_SLOTS.find((slot) => !unavailableSlots.includes(slot));
-  const { res: createRes, data: created } = await post('/api/bookings', { ...validBooking, timeSlot: freeSlot });
+  // 3. Valid booking created as pending (on the first open slot in the booking window)
+  const availabilityRes = await fetch(`${BASE_URL}/api/bookings/availability`);
+  const { days = [] } = await availabilityRes.json();
+  const freeSlot = days.flatMap((d) => d.slots).find((s) => s.status === 'available')?.slotKey;
+  const { res: createRes, data: created } = await post('/api/bookings', { ...validBooking, slotKey: freeSlot });
   const bookingId = created.booking?.bookingId;
   assert(createRes.status === 201 && bookingId && created.booking.payment.paymentStatus === 'pending',
     'Valid booking created (201, pending payment)', created);
@@ -94,9 +93,10 @@ async function run() {
 
   // 5. Paid booking now blocks the slot
   {
-    const res = await fetch(`${BASE_URL}/api/bookings/slots`);
-    const { unavailableSlots: nowTaken = [] } = await res.json();
-    assert(nowTaken.includes(freeSlot), 'Paid booking takes the slot');
+    const res = await fetch(`${BASE_URL}/api/bookings/availability`);
+    const { days: after = [] } = await res.json();
+    const nowSlot = after.flatMap((d) => d.slots).find((s) => s.slotKey === freeSlot);
+    assert(nowSlot?.status === 'booked', 'Paid booking takes the slot', nowSlot);
   }
 
   // 6. Admin API requires auth
@@ -125,10 +125,10 @@ async function run() {
   }
 
   {
-    const res = await fetch(`${BASE_URL}/consultant/dashboard`, { headers: { Cookie: cookie } });
+    const res = await fetch(`${BASE_URL}/consultant/dashboard/bookings`, { headers: { Cookie: cookie } });
     const html = await res.text();
-    assert(res.status === 200 && html.includes('Consultation Bookings') && html.includes(bookingId.slice(0, 8)),
-      'Paid booking rendered on /consultant/dashboard');
+    assert(res.status === 200 && html.includes('Needs reschedule') && html.includes(bookingId.slice(0, 8)),
+      'Paid booking rendered on /consultant/dashboard/bookings');
   }
 
   await post('/api/auth/consultant/logout', undefined, { Cookie: cookie });

@@ -123,13 +123,13 @@ async function run() {
 
   res = await get('/admin/dashboard', admin.cookie);
   let html = await res.text();
-  assert(res.status === 200 && html.includes('Consultant Accounts') && html.includes(ACCOUNTS.consultant.email),
-    'Admin dashboard renders platform overview with consultant accounts');
+  assert(res.status === 200 && html.includes('Consultant Accounts') && html.includes('Business analytics'),
+    'Admin dashboard renders platform status and business analytics');
 
   res = await get('/consultant/dashboard', consultant.cookie);
   html = await res.text();
-  assert(res.status === 200 && html.includes('Paid Consultation Bookings') && html.includes('Test Consultant'),
-    'Consultant dashboard renders the bookings overview');
+  assert(res.status === 200 && html.includes('Revenue this month') && html.includes('Test Consultant'),
+    'Consultant dashboard renders the analytics overview');
 
   res = await get('/api/consultant/bookings', consultant.cookie);
   assert(res.status === 200, 'Consultant can read /api/consultant/bookings');

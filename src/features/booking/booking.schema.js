@@ -2,8 +2,8 @@ import {
   USER_ROLE_OPTIONS,
   SALES_TEAM_SIZE_OPTIONS,
   SALES_CHALLENGE_OPTIONS,
-  TIME_SLOTS,
 } from '@/features/booking/booking.options';
+import { parseSlotKey } from '@/features/schedule/slot-engine';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_ALLOWED_CHARS = /^[+0-9\s().-]+$/;
@@ -32,7 +32,8 @@ export function validateBookingInput(body) {
   const salesTeamSize = cleanText(body.teamSize);
   const salesChallenge = cleanText(body.challenge);
   const salesChallengeOther = cleanText(body.challengeOther);
-  const preferredTimeSlot = cleanText(body.timeSlot);
+  // "YYYY-MM-DDTHH:MM" from the availability API; bookability is re-checked by the slot engine
+  const slot = parseSlotKey(cleanText(body.slotKey));
 
   const fieldErrors = {};
 
@@ -72,8 +73,8 @@ export function validateBookingInput(body) {
     fieldErrors.challengeOther = 'Please describe your sales challenge';
   }
 
-  if (!TIME_SLOTS.includes(preferredTimeSlot)) {
-    fieldErrors.timeSlot = 'Please select a valid time slot';
+  if (!slot) {
+    fieldErrors.slotKey = 'Please select a date and time slot';
   }
 
   const errorKeys = Object.keys(fieldErrors);
@@ -93,7 +94,8 @@ export function validateBookingInput(body) {
       salesTeamSize: salesTeamSize || null,
       salesChallenge,
       salesChallengeOther: salesChallenge === 'Other' ? salesChallengeOther : null,
-      preferredTimeSlot,
+      consultationDate: slot.date,
+      slotStartTime: slot.startTime,
     },
   };
 }

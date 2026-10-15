@@ -23,52 +23,12 @@ async function withTransaction(work) {
   }
 }
 
-/**
- * SINGLE SOURCE OF TRUTH for slot occupancy.
- * A slot is taken today only when a booking for it is `confirmed` AND has a `paid`
- * payment. Pending, cancelled, and failed attempts never block a slot.
- * Expects the booking table aliased as `b`.
+/*
+ * Slot occupancy is decided by the slot engine (features/schedule): a slot is taken only by
+ * a `confirmed` booking (= paid). Pending, cancelled and failed attempts never block a slot.
+ * The database enforces it too: unique key uq_confirmed_slot allows ONE confirmed booking
+ * per consultation_date + slot_start_time.
  */
-const PAID_SLOT_CONDITION = `
-  DATE(b.created_at) = CURDATE()
-  AND b.booking_status = 'confirmed'
-  AND EXISTS (
-    SELECT 1 FROM booking_payments paid
-    WHERE paid.booking_id = b.booking_id AND paid.payment_status = 'paid'
-  )`;
-
-/**
- * Time slots already taken today by paid bookings.
- * @returns {Promise<string[]>} Array of unavailable slot strings
- */
-export async function getUnavailableTimeSlots() {
-  const rows = await query(
-    `SELECT DISTINCT b.preferred_time_slot
-     FROM consultation_bookings b
-     WHERE ${PAID_SLOT_CONDITION}`
-  );
-
-  return rows.map((r) => r.preferred_time_slot);
-}
-
-/**
- * Whether a slot is already taken today by a paid booking other than `excludeBookingId`.
- * @param {string} timeSlot
- * @param {string} [excludeBookingId]
- * @param {import('mysql2/promise').PoolConnection} [conn] - pass to run inside a transaction (locks matching rows)
- * @returns {Promise<boolean>}
- */
-export async function isSlotTakenByPaidBooking(timeSlot, excludeBookingId = null, conn = null) {
-  const sql = `SELECT b.booking_id
-     FROM consultation_bookings b
-     WHERE b.preferred_time_slot = ?
-       AND b.booking_id <> ?
-       AND ${PAID_SLOT_CONDITION}
-     LIMIT 1${conn ? ' FOR UPDATE' : ''}`;
-  const params = [timeSlot, excludeBookingId || ''];
-  const rows = conn ? (await conn.execute(sql, params))[0] : await query(sql, params);
-  return rows.length > 0;
-}
 
 /**
  * Mark a booking and its payment as cancelled when customer cancels or payment fails.
@@ -95,10 +55,12 @@ export async function markBookingCancelled(bookingId) {
 
 /**
  * Create a booking together with its pending payment record (atomic).
- * Rejects slots already taken by a paid booking (see PAID_SLOT_CONDITION).
- * 
+ * The caller must have checked the slot with checkSlotBookable() first; the slot is only
+ * claimed when the payment is confirmed (see markBookingPaymentSucceeded).
+ *
  * @param {Object} params
- * @param {Object} params.booking - normalized output of validateBookingInput()
+ * @param {Object} params.booking - normalized output of validateBookingInput() plus
+ *   consultationDate, slotStartTime, slotEndTime, preferredTimeSlot (label)
  * @param {number} params.amountPaise
  * @param {string} params.currencyCode
  * @returns {Promise<{ bookingId: string, paymentId: string }>}
@@ -108,23 +70,13 @@ export async function createBookingWithPendingPayment({ booking, amountPaise, cu
   const paymentId = crypto.randomUUID();
 
   await withTransaction(async (conn) => {
-    // 1. Reject if the slot is already taken by a paid booking (locks matching rows)
-    if (await isSlotTakenByPaidBooking(booking.preferredTimeSlot, null, conn)) {
-      const err = new Error(
-        `The time slot "${booking.preferredTimeSlot}" is already booked.`
-      );
-      err.code = 'SLOT_ALREADY_BOOKED';
-      err.timeSlot = booking.preferredTimeSlot;
-      throw err;
-    }
-
-    // 2. Insert booking with pending payment
     await conn.execute(
       `INSERT INTO consultation_bookings (
          booking_id, full_name, company_name, work_email, phone_number,
          user_role, user_role_other, sales_team_size,
-         sales_challenge, sales_challenge_other, preferred_time_slot, booking_status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment')`,
+         sales_challenge, sales_challenge_other, preferred_time_slot,
+         consultation_date, slot_start_time, slot_end_time, booking_status
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment')`,
       [
         bookingId,
         booking.fullName,
@@ -137,6 +89,9 @@ export async function createBookingWithPendingPayment({ booking, amountPaise, cu
         booking.salesChallenge,
         booking.salesChallengeOther,
         booking.preferredTimeSlot,
+        booking.consultationDate,
+        booking.slotStartTime,
+        booking.slotEndTime,
       ]
     );
 
@@ -154,12 +109,17 @@ export async function createBookingWithPendingPayment({ booking, amountPaise, cu
  * Mark a booking's pending payment as paid and confirm the booking (atomic, idempotent).
  * This is the single entry point a real gateway webhook should call later.
  *
+ * If another booking was confirmed for the same slot first (two customers paying at the
+ * same moment), the database rejects the second confirmation: the payment is still recorded
+ * as paid and the booking becomes `reschedule_required` — the customer keeps their payment
+ * and picks another time.
+ *
  * @param {Object} params
  * @param {string} params.bookingId
  * @param {string} params.paymentProvider - e.g. "worldline"
  * @param {string} params.providerPaymentId
  * @param {string} [params.providerOrderId]
- * @returns {Promise<{ outcome: 'paid' | 'already_paid' | 'not_found', paymentId?: string, paidAt?: Date }>}
+ * @returns {Promise<{ outcome: 'paid' | 'paid_needs_reschedule' | 'already_paid' | 'not_found', paymentId?: string, paidAt?: Date }>}
  */
 export async function markBookingPaymentSucceeded({
   bookingId,
@@ -200,29 +160,36 @@ export async function markBookingPaymentSucceeded({
       [paymentProvider, providerPaymentId, providerOrderId, payment.payment_id]
     );
 
-    await conn.execute(
-      `UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`,
-      [bookingId]
-    );
+    let outcome = 'paid';
+    try {
+      await conn.execute(`UPDATE consultation_bookings SET booking_status = 'confirmed' WHERE booking_id = ?`, [bookingId]);
+    } catch (err) {
+      if (err.code !== 'ER_DUP_ENTRY') throw err;
+      // Slot already confirmed for someone else (uq_confirmed_slot)
+      await conn.execute(`UPDATE consultation_bookings SET booking_status = 'reschedule_required' WHERE booking_id = ?`, [bookingId]);
+      outcome = 'paid_needs_reschedule';
+    }
 
     const [updated] = await conn.execute(
       `SELECT paid_at FROM booking_payments WHERE payment_id = ?`,
       [payment.payment_id]
     );
 
-    return { outcome: 'paid', paymentId: payment.payment_id, paidAt: updated[0].paid_at };
+    return { outcome, paymentId: payment.payment_id, paidAt: updated[0].paid_at };
   });
 }
 
 /**
- * Admin-facing status, derived from booking + latest payment:
- *  - paid       → payment captured, booking confirmed
- *  - pending    → submitted, waiting for payment
- *  - cancelled  → customer cancelled / payment failed (slot released)
- *  - no_payment → booking row has no payment record (e.g. payment row deleted manually)
+ * Status derived from booking + latest payment:
+ *  - paid                → payment captured, booking confirmed
+ *  - reschedule_required → paid, but the slot must be moved (taken / blocked)
+ *  - pending             → submitted, waiting for payment
+ *  - cancelled           → customer cancelled / payment failed (slot released)
+ *  - no_payment          → booking row has no payment record (e.g. payment row deleted manually)
  */
 function deriveBookingStatus(row) {
   if (!row.payment_id) return 'no_payment';
+  if (row.booking_status === 'reschedule_required') return 'reschedule_required';
   if (row.payment_status === 'paid') return 'paid';
   if (row.booking_status === 'cancelled' || row.payment_status === 'failed') return 'cancelled';
   return 'pending';
@@ -241,6 +208,9 @@ function mapBookingRow(row) {
     salesChallenge: row.sales_challenge,
     salesChallengeOther: row.sales_challenge_other,
     preferredTimeSlot: row.preferred_time_slot,
+    consultationDate: row.consultation_date,
+    slotStartTime: row.slot_start_time,
+    slotEndTime: row.slot_end_time,
     bookingStatus: row.booking_status,
     status: deriveBookingStatus(row),
     bookedAt: row.created_at,
@@ -273,6 +243,9 @@ const BOOKING_COLUMNS = `
   b.booking_id, b.full_name, b.company_name, b.work_email, b.phone_number,
   b.user_role, b.user_role_other, b.sales_team_size,
   b.sales_challenge, b.sales_challenge_other, b.preferred_time_slot,
+  DATE_FORMAT(b.consultation_date, '%Y-%m-%d') AS consultation_date,
+  TIME_FORMAT(b.slot_start_time, '%H:%i') AS slot_start_time,
+  TIME_FORMAT(b.slot_end_time, '%H:%i') AS slot_end_time,
   b.booking_status, b.created_at,
   p.payment_id, p.payment_provider, p.provider_order_id, p.provider_payment_id,
   p.amount_paise, p.currency_code, p.payment_status, p.paid_at`;
@@ -281,48 +254,80 @@ const BOOKING_COLUMNS = `
 const PAID_BOOKING_SQL = `p.payment_status = 'paid' AND b.booking_status = 'confirmed'`;
 
 /**
- * List successfully paid & confirmed bookings, most recently paid first.
- * @param {Object} params
- * @param {number} [params.page] - 1-based
- * @param {number} [params.pageSize]
+ * Booking views for the consultant / admin Bookings page. `today` is the business-timezone
+ * date ("YYYY-MM-DD") — never the DB server's CURDATE().
+ */
+const BOOKING_VIEWS = {
+  upcoming: { where: `${PAID_BOOKING_SQL} AND b.consultation_date >= ?`, order: 'b.consultation_date ASC, b.slot_start_time ASC', usesToday: true },
+  today: { where: `${PAID_BOOKING_SQL} AND b.consultation_date = ?`, order: 'b.slot_start_time ASC', usesToday: true },
+  past: { where: `${PAID_BOOKING_SQL} AND b.consultation_date < ?`, order: 'b.consultation_date DESC, b.slot_start_time DESC', usesToday: true },
+  reschedule: { where: `b.booking_status = 'reschedule_required' AND p.payment_status = 'paid'`, order: 'p.paid_at ASC', usesToday: false },
+};
+
+export const BOOKING_VIEW_KEYS = Object.keys(BOOKING_VIEWS);
+
+/**
+ * @param {{ view: 'upcoming'|'today'|'past'|'reschedule', today: string, page?: number, pageSize?: number, search?: string }} params
  * @returns {Promise<{ bookings: object[], totalCount: number }>}
  */
-export async function listPaidBookings({ page = 1, pageSize = 20 } = {}) {
+export async function listBookingsForView({ view, today, page = 1, pageSize = 20, search = '' }) {
+  const config = BOOKING_VIEWS[view] || BOOKING_VIEWS.upcoming;
   const safePageSize = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
   const safePage = Math.max(Number(page) || 1, 1);
   const offset = (safePage - 1) * safePageSize;
 
+  let where = config.where;
+  const params = config.usesToday ? [today] : [];
+  const term = typeof search === 'string' ? search.trim().slice(0, 100) : '';
+  if (term) {
+    where += ' AND (b.full_name LIKE ? OR b.company_name LIKE ? OR b.work_email LIKE ? OR b.phone_number LIKE ?)';
+    const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    params.push(like, like, like, like);
+  }
+
   // LIMIT/OFFSET are inlined as validated integers; mysql2 prepared statements reject them as params
   const rows = await query(
-    `SELECT ${BOOKING_COLUMNS}
-     ${BOOKING_WITH_LATEST_PAYMENT}
-     WHERE ${PAID_BOOKING_SQL}
-     ORDER BY p.paid_at DESC
-     LIMIT ${safePageSize} OFFSET ${offset}`
+    `SELECT ${BOOKING_COLUMNS} ${BOOKING_WITH_LATEST_PAYMENT}
+     WHERE ${where}
+     ORDER BY ${config.order}
+     LIMIT ${safePageSize} OFFSET ${offset}`,
+    params
   );
+  const countRows = await query(`SELECT COUNT(*) AS total_count ${BOOKING_WITH_LATEST_PAYMENT} WHERE ${where}`, params);
 
-  const countRows = await query(
-    `SELECT COUNT(*) AS total_count ${BOOKING_WITH_LATEST_PAYMENT} WHERE ${PAID_BOOKING_SQL}`
+  return { bookings: rows.map(mapBookingRow), totalCount: Number(countRows[0].total_count) };
+}
+
+/**
+ * Counts for the Bookings page tabs.
+ * @param {string} today - business-timezone date
+ */
+export async function getBookingViewCounts(today) {
+  const rows = await query(
+    `SELECT
+       COALESCE(SUM(${PAID_BOOKING_SQL} AND b.consultation_date >= ?), 0) AS upcoming_count,
+       COALESCE(SUM(${PAID_BOOKING_SQL} AND b.consultation_date = ?), 0) AS today_count,
+       COALESCE(SUM(${PAID_BOOKING_SQL} AND b.consultation_date < ?), 0) AS past_count,
+       COALESCE(SUM(b.booking_status = 'reschedule_required' AND p.payment_status = 'paid'), 0) AS reschedule_count
+     ${BOOKING_WITH_LATEST_PAYMENT}`,
+    [today, today, today]
   );
-
+  const row = rows[0];
   return {
-    bookings: rows.map(mapBookingRow),
-    totalCount: Number(countRows[0].total_count),
+    upcoming: Number(row.upcoming_count),
+    today: Number(row.today_count),
+    past: Number(row.past_count),
+    reschedule: Number(row.reschedule_count),
   };
 }
 
 /**
- * KPIs for the admin dashboard, over paid & confirmed bookings only.
- * @returns {Promise<{ paidBookingCount: number, paidTodayCount: number,
- *   paidThisMonthCount: number, totalRevenuePaise: number }>}
+ * Headline totals over paid & confirmed bookings (admin overview).
+ * @returns {Promise<{ paidBookingCount: number, totalRevenuePaise: number }>}
  */
 export async function getPaidBookingStats() {
   const rows = await query(
-    `SELECT
-       COUNT(*) AS paid_booking_count,
-       COALESCE(SUM(p.paid_at >= CURDATE()), 0) AS paid_today_count,
-       COALESCE(SUM(p.paid_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')), 0) AS paid_this_month_count,
-       COALESCE(SUM(p.amount_paise), 0) AS total_revenue_paise
+    `SELECT COUNT(*) AS paid_booking_count, COALESCE(SUM(p.amount_paise), 0) AS total_revenue_paise
      ${BOOKING_WITH_LATEST_PAYMENT}
      WHERE ${PAID_BOOKING_SQL}`
   );
@@ -330,8 +335,6 @@ export async function getPaidBookingStats() {
   const row = rows[0];
   return {
     paidBookingCount: Number(row.paid_booking_count),
-    paidTodayCount: Number(row.paid_today_count),
-    paidThisMonthCount: Number(row.paid_this_month_count),
     totalRevenuePaise: Number(row.total_revenue_paise),
   };
 }
@@ -390,4 +393,3 @@ export async function getBookingByProviderOrderId(providerOrderId) {
   if (!rows || rows.length === 0) return null;
   return mapBookingRow(rows[0]);
 }
-

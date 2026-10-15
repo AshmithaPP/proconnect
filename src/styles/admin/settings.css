@@ -325,3 +325,253 @@
   margin: 0 0 10px;
   color: var(--color-text);
 }
+
+/* --- BOOKINGS PAGE --- */
+.bookings-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 24px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.bookings-tabs {
+  border-bottom: none;
+}
+
+.tab-count {
+  display: inline-block;
+  margin-left: 6px;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(20, 20, 20, 0.06);
+  font-size: 0.72rem;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.tab-count.alert {
+  background: rgba(245, 166, 35, 0.2);
+  color: #9a6400;
+}
+
+.bookings-search {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 12px;
+  min-width: min(100%, 380px);
+}
+
+.bookings-search .form-control-pro {
+  height: 40px;
+}
+
+.cell-primary.is-today {
+  color: var(--color-primary);
+}
+
+/* --- AVAILABILITY --- */
+.availability-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.availability-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.availability-controls .form-control-pro {
+  max-width: 420px;
+  height: 40px;
+}
+
+.availability-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.avail-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid transparent;
+}
+
+.availability-day.is-off {
+  background: #fbf9f6;
+}
+
+.availability-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.avail-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.avail-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.avail-slot:disabled {
+  cursor: default;
+}
+
+.avail-slot-time {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.avail-slot-state {
+  font-size: 0.72rem;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Open: white with green edge · Unavailable: hatched grey · Booked: blue · Past: faded */
+.avail-slot.available,
+.avail-swatch.available {
+  background: #ffffff;
+  border-color: rgba(30, 132, 73, 0.45);
+  color: var(--color-text);
+}
+
+.avail-slot.available .avail-slot-state {
+  color: #1e8449;
+}
+
+.avail-slot.available:hover:not(:disabled) {
+  border-color: var(--color-error);
+}
+
+.avail-slot.blocked,
+.avail-swatch.blocked {
+  background: repeating-linear-gradient(135deg, #f1eeea, #f1eeea 6px, #e6e2dc 6px, #e6e2dc 12px);
+  border-color: #d6d1c9;
+  color: #6b6760;
+}
+
+.avail-slot.blocked:hover:not(:disabled) {
+  border-color: #1e8449;
+}
+
+.avail-slot.booked,
+.avail-swatch.booked {
+  background: #e8f1fc;
+  border-color: #9ec5f4;
+  color: #184f95;
+}
+
+.avail-slot.past,
+.avail-swatch.past {
+  background: #f6f5f2;
+  border-color: #ece9e3;
+  color: #a39e95;
+}
+
+/* --- WEEKLY HOURS --- */
+.weekly-hours {
+  display: flex;
+  flex-direction: column;
+}
+
+.weekly-day {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.weekly-day:last-child {
+  border-bottom: none;
+}
+
+.weekly-day-name {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+  font-size: 0.88rem;
+}
+
+.weekly-day-ranges {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.weekly-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.weekly-range .form-control-pro {
+  width: 130px;
+  height: 40px;
+}
+
+.weekly-closed {
+  padding-top: 9px;
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+}
+
+.weekly-day-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-top: 9px;
+}
+
+@media (max-width: 760px) {
+  .weekly-day {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .weekly-day-actions {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 0;
+  }
+}

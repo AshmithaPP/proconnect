@@ -3,8 +3,10 @@ import Link from 'next/link';
 import { requirePortalUser } from '@/features/auth/require-portal-user';
 import { listPortalUsersByRole } from '@/features/auth/portal-user.repository';
 import { getPaidBookingStats } from '@/features/booking/booking.repository';
-import { getPaymentMode, getWorldlineConfig, getConsultationFee } from '@/features/payments/payment.config';
+import { getPaymentMode, getWorldlineConfig } from '@/features/payments/payment.config';
+import { getBookingRules } from '@/features/schedule/schedule.repository';
 import { formatAmount } from '@/features/payments/format-amount';
+import AnalyticsDashboard from '@/features/analytics/components/AnalyticsDashboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,27 +18,23 @@ export const metadata = {
   },
 };
 
-function formatDateTime(value) {
-  if (!value) return '—';
-  return new Date(value).toLocaleString('en-IN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'Asia/Kolkata',
-  });
-}
 
 /**
- * Platform admin overview (our company). Customer bookings are managed in the consultant
- * portal; this page shows platform health and the consultant accounts.
+ * Platform admin overview (our company): platform status, then the consultant's business
+ * analytics (the admin has every consultant feature).
  */
-export default async function AdminDashboardPage() {
+export default async function AdminDashboardPage({ searchParams }) {
   const { user } = await requirePortalUser('admin');
+  const resolvedSearchParams = await searchParams;
 
-  const [consultants, stats] = await Promise.all([listPortalUsersByRole('consultant'), getPaidBookingStats()]);
+  const [consultants, stats, bookingRules] = await Promise.all([
+    listPortalUsersByRole('consultant'),
+    getPaidBookingStats(),
+    getBookingRules(),
+  ]);
 
   const paymentMode = getPaymentMode();
   const isSandbox = getWorldlineConfig().baseUrl.includes('.preprod.');
-  const fee = getConsultationFee();
   const activeConsultants = consultants.filter((c) => c.accountStatus === 'active').length;
 
   return (
@@ -56,7 +54,7 @@ export default async function AdminDashboardPage() {
             Welcome back, <span className="highlight-text">{user.fullName}</span>
           </h1>
           <p className="dashboard-sub-heading">
-            Platform status and consultant accounts. Bookings are managed in the consultant portal.
+            Platform status and the consultant's business at a glance.
           </p>
         </div>
       </div>
@@ -69,7 +67,9 @@ export default async function AdminDashboardPage() {
             <span className="card-pill-tag tag-green">Active</span>
           </div>
           <div className="card-val">{activeConsultants}</div>
-          <div className="card-subtext">{consultants.length} in total</div>
+          <div className="card-subtext">
+            {consultants.length} in total · <Link href="/admin/dashboard/consultants">Manage →</Link>
+          </div>
         </div>
 
         <div className="admin-info-card">
@@ -88,8 +88,8 @@ export default async function AdminDashboardPage() {
             <span className="card-label">Consultation Fee</span>
             <span className="card-pill-tag">INR</span>
           </div>
-          <div className="card-val">{fee.amountPaise ? formatAmount(fee.amountPaise) : 'Not set'}</div>
-          <div className="card-subtext">Per booking</div>
+          <div className="card-val">{formatAmount(bookingRules.consultationFeePaise)}</div>
+          <div className="card-subtext">Per booking · set in Schedule &amp; Pricing</div>
         </div>
 
         <div className="admin-info-card">
@@ -102,46 +102,14 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* Consultant Accounts */}
-      <div className="admin-table-card">
-        <div className="admin-table-head">
-          <h2 className="admin-table-title">Consultant Accounts</h2>
-          <Link href="/admin/dashboard/consultants" className="card-pill-tag">Manage →</Link>
+      {/* Business analytics — the same dashboard the consultant sees */}
+      <div className="portal-page-head">
+        <div>
+          <h2 className="portal-page-title" style={{ fontSize: '1.2rem' }}>Business analytics</h2>
+          <p className="portal-page-subtitle">The consultant's dashboard: revenue, bookings, schedule and clients.</p>
         </div>
-
-        {consultants.length === 0 ? (
-          <div className="admin-table-empty">
-            No consultant account yet. <Link href="/admin/dashboard/consultants">Create one</Link>.
-          </div>
-        ) : (
-          <div className="admin-table-scroll">
-            <table className="admin-data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Last Login</th>
-                </tr>
-              </thead>
-              <tbody>
-                {consultants.map((consultant) => (
-                  <tr key={consultant.portalUserId}>
-                    <td className="cell-primary">{consultant.fullName}</td>
-                    <td>
-                      <a href={`mailto:${consultant.email}`}>{consultant.email}</a>
-                    </td>
-                    <td className="cell-nowrap">{consultant.accountStatus === 'active' ? 'Active' : 'Inactive'}</td>
-                    <td className="cell-nowrap">{formatDateTime(consultant.createdAt)}</td>
-                    <td className="cell-nowrap">{formatDateTime(consultant.lastLoginAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
+      <AnalyticsDashboard basePath="/admin/dashboard" bookingsPath="/admin/dashboard/bookings" range={resolvedSearchParams?.range} />
     </div>
   );
 }
