@@ -43,14 +43,10 @@ export async function BookingsPage({ portalKey, searchParams }) {
 /** @param {{ portalKey: 'admin'|'consultant' }} props */
 export async function AvailabilityPage({ portalKey }) {
   await requirePortalUser(portalKey);
-  const rules = await getBookingRules();
   return (
     <div className="admin-dashboard-full">
-      <PageHead
-        title="Availability"
-        subtitle="Mark days or individual slots when you are not available. Customers can only book open slots."
-      />
-      <AvailabilityCalendar schedulePath={paths(portalKey).schedule} initialWindowDays={rules.bookingWindowDays} />
+      <PageHead title="Availability" subtitle="Choose when customers can book you." />
+      <AvailabilityCalendar />
     </div>
   );
 }

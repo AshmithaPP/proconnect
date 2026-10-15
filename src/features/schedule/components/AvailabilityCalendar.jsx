@@ -1,55 +1,67 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import FormStatus from '@/components/portal/form/FormStatus';
-import { addDays, formatDateLabel } from '@/features/schedule/slot-engine';
+import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { addDays, formatDateLabel, formatTimeLabel, timeToMinutes, BUSINESS_HOURS } from '@/features/schedule/slot-engine';
 
+const WEEK_DAYS = 7;
 const MAX_DAYS_AHEAD = 60;
 
-const STATUS_TEXT = {
-  available: 'Open',
-  blocked: 'Unavailable',
-  booked: 'Booked',
-  past: 'Past',
+/** The day's sections, taken from the business hours (Morning 10–1, Afternoon & evening 2–10) */
+const SECTIONS = BUSINESS_HOURS.map((range, index) => ({
+  title: index === 0 ? 'Morning' : 'Afternoon & evening',
+  hours: `${formatTimeLabel(timeToMinutes(range.startTime))} – ${formatTimeLabel(timeToMinutes(range.endTime))}`,
+  start: range.startTime,
+  end: range.endTime,
+}));
+
+const startOnly = (slot) => formatTimeLabel(timeToMinutes(slot.startTime));
+
+const SLOT_STATE = {
+  available: 'Free',
+  blocked: 'Off',
+  past: 'Done',
 };
 
 /**
- * Consultant availability: every day in view with its slots. Click an open slot to mark
- * yourself unavailable, click it again to reopen; or switch a whole day off. A paid booking in
- * a blocked time is moved automatically to the next free slot (after you confirm) and its client
- * emailed. Customers see changes immediately.
- *
- * @param {{ schedulePath: string, initialWindowDays: number }} props
+ * Availability: pick a day, tap a time to switch it off or on, or take the whole day off.
+ * A booked time can also be switched off — its booking then moves automatically to the next
+ * free time and the client is emailed.
  */
-export default function AvailabilityCalendar({ schedulePath, initialWindowDays }) {
-  const pageDays = Math.min(Math.max(initialWindowDays, 7), 14);
-  const [fromDate, setFromDate] = useState(null);
+export default function AvailabilityCalendar() {
   const [data, setData] = useState(null);
-  const [reason, setReason] = useState('');
+  const [fromDate, setFromDate] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
-  const [status, setStatus] = useState(null);
+  const [message, setMessage] = useState(null);
 
   const load = useCallback(async (from) => {
-    const query = new URLSearchParams({ days: String(pageDays) });
+    const query = new URLSearchParams({ days: String(WEEK_DAYS) });
     if (from) query.set('from', from);
     const res = await fetch(`/api/consultant/availability?${query}`, { cache: 'no-store' });
     if (!res.ok) {
-      setStatus({ type: 'error', message: res.status === 401 ? 'Your session has expired. Please sign in again.' : 'Could not load availability' });
+      setMessage({ type: 'error', text: res.status === 401 ? 'Your session has expired. Please sign in again.' : 'Could not load your availability.' });
       return;
     }
     const json = await res.json();
     setData(json);
     setFromDate(json.days[0]?.date || from);
-  }, [pageDays]);
+    setSelectedDate((current) => (current && json.days.some((d) => d.date === current) ? current : json.days[0]?.date));
+  }, []);
 
   useEffect(() => {
     load(null);
   }, [load]);
 
-  const send = async (key, url, method, body, successMessage) => {
+  useEffect(() => {
+    if (!message || message.type === 'error') return undefined;
+    const timer = setTimeout(() => setMessage(null), 6000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  const send = async (key, url, method, body, successText) => {
     setBusyKey(key);
-    setStatus(null);
+    setMessage(null);
     try {
       const res = await fetch(url, {
         method,
@@ -58,150 +70,165 @@ export default function AvailabilityCalendar({ schedulePath, initialWindowDays }
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setStatus({ type: 'error', message: json.error || 'Could not save' });
-      } else {
-        const moved = (json.movedBookings || []).map((b) =>
-          b.outcome === 'moved' ? `${b.fullName} → ${b.newTime}` : `${b.fullName}: no free slot yet (booked automatically when one opens)`
-        );
-        const waiting = json.rescheduledWaitingBookings ? ` ${json.rescheduledWaitingBookings} waiting booking(s) got a slot.` : '';
-        setStatus({ type: 'success', message: `${successMessage}${moved.length ? ` · Moved: ${moved.join('; ')}` : ''}${waiting}` });
-        await load(fromDate);
+        setMessage({ type: 'error', text: json.error || 'Could not save. Please try again.' });
+        return;
       }
+      const moved = (json.movedBookings || []).map((b) =>
+        b.outcome === 'moved' ? `${b.fullName} moved to ${b.newTime}` : `${b.fullName} will be moved as soon as a time is free`
+      );
+      setMessage({ type: 'success', text: [successText, ...moved].join(' · ') });
+      await load(fromDate);
     } catch {
-      setStatus({ type: 'error', message: 'Network error. Please try again.' });
+      setMessage({ type: 'error', text: 'Network error. Please try again.' });
     } finally {
       setBusyKey(null);
     }
   };
 
   const toggleSlot = (day, slot) => {
-    if (slot.status === 'booked' && slot.booking) {
-      if (!window.confirm(`${slot.label} is booked by ${slot.booking.fullName}. Mark it unavailable?
-
-The booking will be moved automatically to the next free slot and the client emailed.`)) return;
-      send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime, timeOffReason: reason, confirmMove: true }, `${formatDateLabel(day.date)} ${slot.label} marked unavailable`);
-    } else if (slot.status === 'available') {
-      send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime, timeOffReason: reason }, `${formatDateLabel(day.date)} ${slot.label} marked unavailable`);
+    const when = `${formatDateLabel(day.date, { withYear: false })}, ${startOnly(slot)}`;
+    if (slot.status === 'available') {
+      send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime }, `${when} is now off`);
     } else if (slot.status === 'blocked' && slot.timeOffId && !day.isDayOff) {
-      send(slot.slotKey, `/api/consultant/time-off/${slot.timeOffId}`, 'DELETE', null, `${formatDateLabel(day.date)} ${slot.label} is open again`);
+      send(slot.slotKey, `/api/consultant/time-off/${slot.timeOffId}`, 'DELETE', null, `${when} is free again`);
+    } else if (slot.status === 'booked' && slot.booking) {
+      if (!window.confirm(`${slot.booking.fullName} is booked at ${when}.\n\nSwitch this time off? Their booking will move to the next free time and they will be emailed.`)) return;
+      send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime, confirmMove: true }, `${when} is now off`);
     }
   };
 
   const toggleDay = (day) => {
+    const label = formatDateLabel(day.date, { withYear: false });
     if (day.isDayOff) {
-      send(day.date, `/api/consultant/time-off/${day.dayOffId}`, 'DELETE', null, `${formatDateLabel(day.date)} is open again`);
-    } else {
-      const booked = day.slots.filter((s) => s.status === 'booked');
-      if (booked.length && !window.confirm(`${formatDateLabel(day.date)} has ${booked.length} paid booking(s). Mark the whole day unavailable?
-
-They will be moved automatically to the next free slots and the clients emailed.`)) return;
-      send(day.date, '/api/consultant/time-off', 'POST', { offDate: day.date, timeOffReason: reason, confirmMove: booked.length > 0 }, `${formatDateLabel(day.date)} marked unavailable`);
+      send(day.date, `/api/consultant/time-off/${day.dayOffId}`, 'DELETE', null, `${label} is open again`);
+      return;
     }
+    const booked = day.slots.filter((s) => s.status === 'booked').length;
+    if (booked && !window.confirm(`${label} has ${booked} booking${booked === 1 ? '' : 's'}.\n\nTake the day off? They will move to the next free times and be emailed.`)) return;
+    send(day.date, '/api/consultant/time-off', 'POST', { offDate: day.date, confirmMove: booked > 0 }, `${label} is now a day off`);
   };
 
   if (!data) {
-    return status ? <FormStatus status={status} /> : <div className="settings-card">Loading availability…</div>;
+    return <div className="settings-card av-loading">{message ? message.text : 'Loading…'}</div>;
   }
 
-  const lastAllowed = addDays(data.today, MAX_DAYS_AHEAD - pageDays);
+  const day = data.days.find((d) => d.date === selectedDate) || data.days[0];
   const canGoBack = fromDate > data.today;
-  const canGoForward = fromDate < lastAllowed;
+  const canGoForward = addDays(fromDate, WEEK_DAYS) <= addDays(data.today, MAX_DAYS_AHEAD - WEEK_DAYS);
+  const lastDate = data.days[data.days.length - 1]?.date;
+  const dayIsPast = day.slots.length > 0 && day.slots.every((s) => s.status === 'past');
 
   return (
-    <div className="admin-dashboard-full" style={{ gap: 16 }}>
-      <div className="settings-card availability-toolbar">
-        <div className="availability-legend" aria-label="Legend">
-          {['available', 'blocked', 'booked', 'past'].map((key) => (
-            <span key={key} className="legend-item">
-              <span className={`avail-swatch ${key}`} aria-hidden="true" /> {STATUS_TEXT[key]}
-            </span>
-          ))}
-        </div>
-        <div className="availability-controls">
-          <input
-            type="text"
-            className="form-control-pro no-icon"
-            placeholder="Reason for new blocks (optional, private)"
-            value={reason}
-            maxLength={200}
-            onChange={(e) => setReason(e.target.value)}
-            aria-label="Reason for marking unavailable"
-          />
-          <div className="row-actions">
-            <button type="button" className="btn-pro btn-light btn-sm" disabled={!canGoBack || busyKey} onClick={() => load(addDays(fromDate, -pageDays) < data.today ? data.today : addDays(fromDate, -pageDays))}>
-              ← Earlier
-            </button>
-            <button type="button" className="btn-pro btn-light btn-sm" disabled={!canGoForward || busyKey} onClick={() => load(addDays(fromDate, pageDays))}>
-              Later →
-            </button>
-          </div>
-        </div>
-        <p className="field-hint" style={{ margin: 0 }}>
-          Customers can book {data.rules.bookingWindowDays} days ahead. Change hours, slot length or the window in{' '}
-          <Link href={schedulePath}>Schedule &amp; Pricing</Link>.
-        </p>
-        <FormStatus status={status} />
+    <div className="av">
+      {/* Week */}
+      <div className="av-week-head">
+        <button type="button" className="av-arrow" onClick={() => load(addDays(fromDate, -WEEK_DAYS) < data.today ? data.today : addDays(fromDate, -WEEK_DAYS))} disabled={!canGoBack || Boolean(busyKey)} aria-label="Previous week">
+          <FiChevronLeft />
+        </button>
+        <span className="av-week-label">
+          {formatDateLabel(fromDate, { withYear: false })} – {formatDateLabel(lastDate, { withYear: false })}
+        </span>
+        <button type="button" className="av-arrow" onClick={() => load(addDays(fromDate, WEEK_DAYS))} disabled={!canGoForward || Boolean(busyKey)} aria-label="Next week">
+          <FiChevronRight />
+        </button>
       </div>
 
-      {data.days.map((day) => {
-        const insideWindow = day.date <= addDays(data.today, data.rules.bookingWindowDays - 1);
-        const bookedCount = day.slots.filter((s) => s.status === 'booked').length;
-        return (
-          <section key={day.date} className={`settings-card availability-day${day.isDayOff ? ' is-off' : ''}`}>
-            <div className="availability-day-head">
-              <div>
-                <h2 className="settings-card-title">
-                  {day.isToday ? `Today · ${day.dateLabel}` : day.dateLabel}
-                </h2>
-                <p className="settings-card-subtitle" style={{ marginBottom: 0 }}>
-                  {day.isClosed
-                    ? 'Closed (no weekly hours on this day)'
-                    : day.isDayOff
-                      ? `You are unavailable all day${day.dayOffReason ? ` — ${day.dayOffReason}` : ''}`
-                      : `${day.availableCount} open · ${bookedCount} booked`}
-                  {!insideWindow && ' · not yet bookable by customers'}
-                </p>
-              </div>
-              {!day.isClosed && (
-                <button
-                  type="button"
-                  className={`btn-pro btn-sm ${day.isDayOff ? 'btn-orange' : 'btn-light'}`}
-                  disabled={busyKey === day.date}
-                  title={!day.isDayOff && bookedCount > 0 ? 'Its paid bookings will be moved to the next free slots' : undefined}
-                  onClick={() => toggleDay(day)}
-                >
-                  {busyKey === day.date ? 'Saving…' : day.isDayOff ? 'Make day available' : 'Mark whole day unavailable'}
-                </button>
-              )}
-            </div>
+      <div className="av-days" role="tablist" aria-label="Days">
+        {data.days.map((d) => {
+          const [weekday, dateNumber] = formatDateLabel(d.date, { withYear: false }).replace(',', '').split(' ');
+          const summary = d.isDayOff ? 'Day off' : d.availableCount === 0 ? 'Full' : `${d.availableCount} free`;
+          return (
+            <button
+              key={d.date}
+              type="button"
+              role="tab"
+              aria-selected={d.date === day.date}
+              className={`av-day${d.date === day.date ? ' is-selected' : ''}${d.isDayOff ? ' is-off' : ''}`}
+              onClick={() => setSelectedDate(d.date)}
+            >
+              <span className="av-day-name">{d.isToday ? 'Today' : weekday}</span>
+              <span className="av-day-number">{dateNumber}</span>
+              <span className="av-day-summary">{summary}</span>
+            </button>
+          );
+        })}
+      </div>
 
-            {!day.isClosed && day.slots.length > 0 && (
-              <div className="avail-slot-grid">
-                {day.slots.map((slot) => {
-                  const clickable =
-                    (slot.status === 'available' || (slot.status === 'blocked' && !day.isDayOff) || (slot.status === 'booked' && !slot.outsideHours && day.date >= data.today)) &&
-                    !busyKey;
-                  return (
-                    <button
-                      key={slot.slotKey}
-                      type="button"
-                      className={`avail-slot ${slot.status}`}
-                      disabled={!clickable}
-                      onClick={() => toggleSlot(day, slot)}
-                      aria-label={`${slot.label}: ${STATUS_TEXT[slot.status]}${slot.booking ? ` — ${slot.booking.fullName}` : ''}${clickable ? (slot.status === 'blocked' ? '. Click to reopen' : '. Click to mark unavailable') : ''}`}
-                    >
-                      <span className="avail-slot-time">{slot.label}</span>
-                      <span className="avail-slot-state">
-                        {busyKey === slot.slotKey ? 'Saving…' : slot.booking ? `${slot.booking.fullName}` : STATUS_TEXT[slot.status]}
-                      </span>
-                    </button>
-                  );
-                })}
+      {message && (
+        <div className={`av-message ${message.type}`} role={message.type === 'error' ? 'alert' : 'status'}>
+          {message.text}
+        </div>
+      )}
+
+      {/* Selected day */}
+      <section className="settings-card av-panel">
+        <div className="av-panel-head">
+          <div>
+            <h2 className="av-panel-title">{formatDateLabel(day.date).replace(/ \d{4}$/, '')}</h2>
+            <p className="av-panel-hint">
+              {day.isDayOff ? 'You are off this day. Customers cannot book it.' : 'Tap a time to switch it off or on.'}
+            </p>
+          </div>
+          {!dayIsPast && (
+            <button type="button" className={`btn-pro btn-sm ${day.isDayOff ? 'btn-orange' : 'btn-light'}`} onClick={() => toggleDay(day)} disabled={Boolean(busyKey)}>
+              {busyKey === day.date ? 'Saving…' : day.isDayOff ? 'Open this day' : 'Take the day off'}
+            </button>
+          )}
+        </div>
+
+        {!day.isDayOff &&
+          SECTIONS.map((section) => {
+            const slots = day.slots.filter((s) => s.startTime >= section.start && s.startTime < section.end);
+            if (!slots.length) return null;
+            return (
+              <div key={section.title} className="av-section">
+                <div className="av-section-head">
+                  <span>{section.title}</span>
+                  <span className="av-section-hours">{section.hours}</span>
+                </div>
+                <div className="av-slots">
+                  {slots.map((slot) => {
+                    const clickable = !busyKey && (slot.status === 'available' || slot.status === 'blocked' || (slot.status === 'booked' && slot.booking && !slot.outsideHours));
+                    return (
+                      <button
+                        key={slot.slotKey}
+                        type="button"
+                        className={`av-slot ${slot.status}`}
+                        disabled={!clickable}
+                        onClick={() => toggleSlot(day, slot)}
+                        title={slot.label}
+                      >
+                        <span className="av-slot-time">{startOnly(slot)}</span>
+                        <span className="av-slot-state">
+                          {busyKey === slot.slotKey ? 'Saving…' : slot.booking ? slot.booking.fullName : SLOT_STATE[slot.status]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            )}
-          </section>
-        );
-      })}
+            );
+          })}
+
+        {/* Bookings outside business hours (e.g. after a length change) stay visible */}
+        {day.slots.some((s) => s.outsideHours) && (
+          <div className="av-section">
+            <div className="av-section-head">
+              <span>Outside your hours</span>
+            </div>
+            <div className="av-slots">
+              {day.slots
+                .filter((s) => s.outsideHours)
+                .map((slot) => (
+                  <span key={slot.slotKey} className="av-slot booked" title={slot.label}>
+                    <span className="av-slot-time">{startOnly(slot)}</span>
+                    <span className="av-slot-state">{slot.booking?.fullName}</span>
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
