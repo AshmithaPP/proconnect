@@ -96,6 +96,7 @@ export function validateBookingInput(body) {
       salesChallengeOther: salesChallenge === 'Other' ? salesChallengeOther : null,
       consultationDate: slot.date,
       slotStartTime: slot.startTime,
+      isGoogleVerified: Boolean(body.isGoogleVerified),
     },
   };
 }

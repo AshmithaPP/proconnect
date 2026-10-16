@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { CheckCircleIcon } from '@/components/ui/Icons';
+import { FiCheckCircle, FiClock, FiSlash, FiXCircle, FiLock, FiVideo, FiCalendar } from 'react-icons/fi';
 import { getBookingById } from '@/features/booking/booking.repository';
 import { formatAmount } from '@/features/payments/format-amount';
 import { reconcileWorldlineBooking } from '@/features/payments/worldline.reconcile';
@@ -16,6 +16,24 @@ export const metadata = {
 };
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function buildGoogleCalendarUrl(booking) {
+  if (!booking?.consultationDate || !booking?.slotStartTime || !booking?.slotEndTime) return null;
+  try {
+    const startIso = `${booking.consultationDate}T${booking.slotStartTime}:00+05:30`;
+    const endIso = `${booking.consultationDate}T${booking.slotEndTime}:00+05:30`;
+    const startUtc = new Date(startIso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const endUtc = new Date(endIso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+    const title = `Strategy Consultation: ${booking.fullName || 'PreConnect'}`;
+    const details = `Confirmed 1-on-1 Consultation with PreConnect.\n\nJoin Google Meet: ${booking.googleMeetLink || ''}\nReference: ${(booking.bookingId || '').slice(0, 8).toUpperCase()}`;
+    const location = booking.googleMeetLink || 'Google Meet';
+
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startUtc}/${endUtc}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Payment result page. The outcome shown is read from the DATABASE, never trusted from
@@ -67,6 +85,7 @@ export default async function PaymentStatusPage({ searchParams }) {
   const amountLabel = booking?.payment
     ? `${formatAmount(booking.payment.amountPaise, booking.payment.currencyCode)} ${booking.payment.currencyCode}`
     : '—';
+  const gcalUrl = isSuccess ? buildGoogleCalendarUrl(booking) : null;
 
   return (
     <div style={styles.container}>
@@ -75,12 +94,16 @@ export default async function PaymentStatusPage({ searchParams }) {
         <div style={styles.iconWrap}>
           {isSuccess ? (
             <div style={styles.successIcon}>
-              <CheckCircleIcon />
+              <FiCheckCircle size={44} />
             </div>
           ) : isCancelled || isProcessing || isReschedule ? (
-            <div style={styles.cancelledIcon}>{isProcessing || isReschedule ? '⏳' : '⊘'}</div>
+            <div style={styles.cancelledIcon}>
+              {isProcessing || isReschedule ? <FiClock size={40} /> : <FiSlash size={40} />}
+            </div>
           ) : (
-            <div style={styles.failedIcon}>✗</div>
+            <div style={styles.failedIcon}>
+              <FiXCircle size={40} />
+            </div>
           )}
         </div>
 
@@ -113,6 +136,45 @@ export default async function PaymentStatusPage({ searchParams }) {
             : 'We were unable to verify your payment with Worldline. Please try again or contact support.'}
         </p>
 
+        {/* Google Meet Video Call Card */}
+        {isSuccess && booking?.googleMeetLink && (
+          <div style={styles.meetBox}>
+            <div style={styles.meetHeader}>
+              <FiVideo size={20} color="#002D62" />
+              <span style={styles.meetTitle}>Google Meet Video Consultation</span>
+            </div>
+            <p style={styles.meetText}>
+              A calendar invitation has been sent to your email. You can also join directly below:
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '14px' }}>
+              <a
+                href={booking.googleMeetLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={styles.meetBtn}
+              >
+                <FiVideo size={16} /> Join with Google Meet
+              </a>
+              {gcalUrl && (
+                <a
+                  href={gcalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={styles.calendarBtn}
+                >
+                  <FiCalendar size={16} /> Add to Google Calendar
+                </a>
+              )}
+            </div>
+            <div style={styles.meetUrlBox}>
+              <span style={styles.meetUrlLabel}>Link:</span>
+              <a href={booking.googleMeetLink} target="_blank" rel="noopener noreferrer" style={styles.meetUrlLink}>
+                {booking.googleMeetLink}
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Receipt Details Box */}
         {bookingId && (
           <div style={styles.receiptBox}>
@@ -128,6 +190,19 @@ export default async function PaymentStatusPage({ searchParams }) {
               <div style={styles.receiptRow}>
                 <span style={styles.receiptLabel}>{autoMove ? 'New time:' : 'Consultation:'}</span>
                 <span style={styles.receiptValue}>{consultationLabel}</span>
+              </div>
+            )}
+            {booking?.googleMeetLink && (
+              <div style={styles.receiptRow}>
+                <span style={styles.receiptLabel}>Meeting Link:</span>
+                <a
+                  href={booking.googleMeetLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ ...styles.receiptValue, color: '#002D62', textDecoration: 'underline' }}
+                >
+                  Join Google Meet
+                </a>
               </div>
             )}
             {autoMove && (
@@ -182,7 +257,7 @@ export default async function PaymentStatusPage({ searchParams }) {
 
         {/* Guarantees */}
         <div style={styles.footerNote}>
-          <span>🔒 256-Bit SSL Encrypted Verification</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FiLock /> 256-Bit SSL Encrypted Verification</span>
           <span>•</span>
           <span>Worldline Pre-Production</span>
         </div>
@@ -261,6 +336,73 @@ const styles = {
     color: '#64748b',
     lineHeight: '1.5',
     margin: '0 0 24px 0',
+  },
+  meetBox: {
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    borderRadius: '12px',
+    padding: '20px',
+    marginBottom: '24px',
+    textAlign: 'center',
+  },
+  meetHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+  },
+  meetTitle: {
+    fontWeight: '700',
+    fontSize: '1.05rem',
+    color: '#1e3a8a',
+  },
+  meetText: {
+    fontSize: '0.86rem',
+    color: '#3b82f6',
+    margin: '0 0 16px 0',
+    lineHeight: '1.4',
+  },
+  meetBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: '#002D62',
+    color: '#ffffff',
+    padding: '12px 20px',
+    borderRadius: '8px',
+    fontWeight: '700',
+    textDecoration: 'none',
+    fontSize: '0.92rem',
+  },
+  calendarBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: '#ffffff',
+    color: '#1e40af',
+    border: '1.5px solid #bfdbfe',
+    padding: '12px 20px',
+    borderRadius: '8px',
+    fontWeight: '700',
+    textDecoration: 'none',
+    fontSize: '0.92rem',
+  },
+  meetUrlBox: {
+    fontSize: '0.8rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    wordBreak: 'break-all',
+  },
+  meetUrlLabel: {
+    color: '#64748b',
+  },
+  meetUrlLink: {
+    color: '#002D62',
+    fontWeight: '600',
+    textDecoration: 'none',
   },
   receiptBox: {
     background: '#f8fafc',

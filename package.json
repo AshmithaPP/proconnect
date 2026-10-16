@@ -25,6 +25,7 @@
     "bcryptjs": "^3.0.3",
     "connect-sdk-nodejs": "^8.3.2",
     "dotenv": "^18.0.7",
+    "googleapis": "^186.0.0",
     "mysql2": "^3.24.5",
     "next": "^15.2.1",
     "nodemailer": "^7.0.13",

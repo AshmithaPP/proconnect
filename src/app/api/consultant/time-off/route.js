@@ -5,23 +5,22 @@ import {
   listConfirmedBookingSlots,
   getBusinessTimezone,
 } from '@/features/schedule/schedule.repository';
-import { getZonedNow, timeToMinutes, formatSlotLabel, formatDateLabel } from '@/features/schedule/slot-engine';
-import { autoRescheduleBooking } from '@/features/reschedule/reschedule.service';
+import { getZonedNow, timeToMinutes, formatSlotLabel } from '@/features/schedule/slot-engine';
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
  * POST /api/consultant/time-off — mark the consultant NOT available (consultant or admin)
- * Body: { offDate, startTime?, endTime?, timeOffReason?, confirmMove? }
+ * Body: { offDate, startTime?, endTime?, timeOffReason? }
  *   - no startTime → the whole day
  *   - startTime + endTime → that time range (one or more slots)
- * Paid bookings inside the range are never dropped: without confirmMove the API answers 409
- * listing them (so the UI can ask "move them?"); with confirmMove: true the time off is saved
- * and each booking is moved automatically to the next free slot, and its customer emailed.
+ *
+ * Confirmed bookings cannot be switched off or moved. Only unbooked slots/days can be blocked.
+ * The only automatic switching allowed in the system is during checkout concurrency (slot_taken).
  */
 export async function POST(request) {
-  const auth = await verifyPortalApiRequest(request, ['consultant', 'admin']);
+  const auth = await verifyPortalApiRequest(request, ['superadmin', 'admin', 'consultant']);
   if (!auth.authorized) return auth.response;
 
   const body = await readJsonBody(request);
@@ -46,16 +45,16 @@ export async function POST(request) {
           (b) => timeToMinutes(b.slotStartTime) < timeToMinutes(endTime) && timeToMinutes(startTime) < timeToMinutes(b.slotEndTime)
         )
       : bookings;
-    if (clashes.length && body.confirmMove !== true) {
+
+    // Disallow switching or moving of confirmed bookings
+    if (clashes.length > 0) {
       const list = clashes.map((b) => `${formatSlotLabel(b.slotStartTime, b.slotEndTime)} — ${b.fullName}`).join('; ');
-      const what = clashes.length === 1 ? 'is a paid booking' : `are ${clashes.length} paid bookings`;
+      const what = clashes.length === 1 ? 'is a confirmed paid booking' : `are ${clashes.length} confirmed paid bookings`;
       return jsonNoStore(
         {
-          error: `There ${what} at this time (${list}). ${clashes.length === 1 ? 'It' : 'They'} will be moved automatically to the next free slot and the client emailed.`,
-          clashingBookings: clashes.map((b) => ({ bookingId: b.bookingId, fullName: b.fullName })),
-          canAutoMove: true,
+          error: `Cannot mark unavailable: there ${what} at this time (${list}). Successfully booked consultations cannot be switched or moved.`,
         },
-        409
+        400
       );
     }
 
@@ -63,22 +62,7 @@ export async function POST(request) {
     if (!startTime) await removeTimeOffForDate(offDate);
     const timeOffId = await addTimeOff({ offDate, startTime, endTime, timeOffReason, createdByUserId: auth.user.portalUserId });
 
-    // Move the paid bookings that were in this time, one by one (each to the next free slot)
-    const movedBookings = [];
-    for (const clash of clashes) {
-      const result = await autoRescheduleBooking(clash.bookingId, {
-        reason: 'consultant_unavailable',
-        rescheduledBy: 'consultant',
-        rescheduledByUserId: auth.user.portalUserId,
-      });
-      movedBookings.push({
-        bookingId: clash.bookingId,
-        fullName: clash.fullName,
-        outcome: result.outcome,
-        newTime: result.outcome === 'moved' ? `${formatDateLabel(result.next.date)}, ${result.next.label}` : null,
-      });
-    }
-    return jsonNoStore({ success: true, timeOffId, movedBookings }, 201);
+    return jsonNoStore({ success: true, timeOffId }, 201);
   } catch (err) {
     console.error('Time off create error:', err.message);
     return jsonNoStore({ error: 'Could not save' }, 500);

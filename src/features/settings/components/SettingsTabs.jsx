@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const TABS = [
-  { label: 'General', href: '/admin/dashboard/settings/general' },
-  { label: 'SEO', href: '/admin/dashboard/settings/seo' },
-  { label: 'SMTP', href: '/admin/dashboard/settings/smtp' },
+  { label: 'General', href: '/superadmin/dashboard/settings/general' },
+  { label: 'SEO', href: '/superadmin/dashboard/settings/seo' },
+  { label: 'Google Meet', href: '/superadmin/dashboard/settings/google-meet' },
 ];
 
 export default function SettingsTabs() {

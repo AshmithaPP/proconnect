@@ -3,6 +3,7 @@ import { requirePortalUser } from '@/features/auth/require-portal-user';
 import BookingsManager from '@/features/booking/components/BookingsManager';
 import AvailabilityCalendar from '@/features/schedule/components/AvailabilityCalendar';
 import ScheduleSettingsForm from '@/features/schedule/components/ScheduleSettingsForm';
+import GoogleMeetSettings from '@/features/settings/components/GoogleMeetSettings';
 import { getBookingRules, getBusinessTimezone } from '@/features/schedule/schedule.repository';
 import { BUSINESS_HOURS } from '@/features/schedule/slot-engine';
 
@@ -46,7 +47,7 @@ export async function AvailabilityPage({ portalKey }) {
   return (
     <div className="admin-dashboard-full">
       <PageHead title="Availability" subtitle="Choose when customers can book you." />
-      <AvailabilityCalendar />
+      <AvailabilityCalendar portalKey={portalKey} />
     </div>
   );
 }
@@ -64,6 +65,20 @@ export async function SchedulePage({ portalKey }) {
         timezone={timezone}
         availabilityPath={paths(portalKey).availability}
       />
+    </div>
+  );
+}
+
+/** @param {{ portalKey: 'admin'|'consultant' }} props */
+export async function GoogleMeetPage({ portalKey }) {
+  await requirePortalUser(portalKey);
+  return (
+    <div className="admin-dashboard-full">
+      <PageHead
+        title="Google Meet & Calendar"
+        subtitle="Manage your Google Calendar connection and automated Google Meet scheduling."
+      />
+      <GoogleMeetSettings portalKey={portalKey} />
     </div>
   );
 }

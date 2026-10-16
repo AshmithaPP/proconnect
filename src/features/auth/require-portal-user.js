@@ -18,7 +18,7 @@ export async function getPortalUserOrNull(portalKey) {
 
   try {
     const cookieStore = await cookies();
-    const sessionToken = cookieStore.get(getSessionCookieName(portalKey))?.value;
+    const sessionToken = cookieStore.get(getSessionCookieName(portal.portalKey))?.value;
 
     if (!sessionToken) {
       return null;

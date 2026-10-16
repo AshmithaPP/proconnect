@@ -1,12 +1,29 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import BookingForm from './BookingForm';
 import SubmissionSuccess from './SubmissionSuccess';
 import { ClockIcon, CheckCircleIcon, LockIcon } from '@/components/ui/Icons';
 
 export default function ConsultationBooking() {
   const [submittedData, setSubmittedData] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      const isGoogleAuth = url.searchParams.get('google_auth') === 'success';
+      const hasBookingHash = url.hash === '#book' || url.hash === '#booking-section' || url.hash === '#consultation-form';
+      if (isGoogleAuth || hasBookingHash) {
+        const timer = setTimeout(() => {
+          const formWrap = document.getElementById('consultation-form-wrap') || document.getElementById('book');
+          if (formWrap) {
+            formWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 120);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
 
   const handleSuccess = (data) => {
     setSubmittedData(data);
@@ -26,6 +43,7 @@ export default function ConsultationBooking() {
 
   return (
     <section className="sec-pad" id="book" style={{ background: 'var(--color-surface-alt)' }}>
+      <div id="booking-section" style={{ position: 'relative', top: '-60px' }} />
       <div id="consultation-form" style={{ position: 'relative', top: '-30px' }} />
       <div className="container">
         <div className="consultation-split">

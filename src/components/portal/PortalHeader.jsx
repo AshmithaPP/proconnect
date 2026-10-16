@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { FiExternalLink } from 'react-icons/fi';
 import LogoutButton from '@/features/auth/components/LogoutButton';
 import { getPortal } from '@/features/auth/portals';
 import { getActiveNavLabel } from '@/features/auth/portal-navigation';
@@ -29,7 +30,7 @@ export default function PortalHeader({ portalKey }) {
           rel="noopener noreferrer"
           className="header-public-link"
         >
-          ↗ Public Website
+          <FiExternalLink className="icon-inline" style={{ marginRight: '6px' }} /> Public Website
         </Link>
 
         {/* Top Header Sign Out */}

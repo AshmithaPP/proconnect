@@ -11,7 +11,7 @@ export default function PhotoRing() {
       <div className="hero-photo-ring">
         {!imgError ? (
           <img
-            src="/assets/img/cynthia.jpg"
+            src="/assets/img/cynthia.jpeg"
             alt="Sales Strategy Consultant"
             className="hero-photo"
             onError={() => setImgError(true)}

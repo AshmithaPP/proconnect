@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { FiTable } from 'react-icons/fi';
 
 /*
  * Small, dependency-free charts for the consultant dashboard.
@@ -35,17 +36,18 @@ function niceScale(maxValue) {
   return { max: step * 4, ticks: [0, 1, 2, 3, 4].map((i) => i * step) };
 }
 
-/** Column with a 4px rounded top and a square base */
+/** Column with a 3px rounded top and a square base */
 function columnPath(x, y, width, height) {
-  const r = Math.min(4, width / 2, height);
+  const r = Math.min(3, width / 2, height);
   if (height <= 0) return '';
   return `M${x},${y + height} V${y + r} Q${x},${y} ${x + r},${y} H${x + width - r} Q${x + width},${y} ${x + width},${y + r} V${y + height} Z`;
 }
 
 function Tooltip({ tip }) {
   if (!tip) return null;
+  const topStyle = tip.topPercent !== undefined ? `${tip.topPercent}%` : tip.top;
   return (
-    <div className="viz-tooltip" role="status" style={{ left: `${tip.x}%`, top: tip.top }}>
+    <div className="viz-tooltip" role="status" style={{ left: `${tip.x}%`, top: topStyle }}>
       <strong>{tip.value}</strong>
       <span>{tip.label}</span>
     </div>
@@ -55,7 +57,9 @@ function Tooltip({ tip }) {
 function TableView({ caption, columns, rows }) {
   return (
     <details className="viz-table-toggle">
-      <summary>View as table</summary>
+      <summary>
+        <FiTable className="icon-inline" style={{ verticalAlign: '-2px', marginRight: '6px' }} /> View as table
+      </summary>
       <div className="admin-table-scroll">
         <table className="admin-data-table viz-table">
           <caption className="sr-only">{caption}</caption>
@@ -83,30 +87,37 @@ function TableView({ caption, columns, rows }) {
 
 /**
  * Vertical columns over time (one series).
+ * Wide viewBox + restrained proportions ensure clean fonts and modern dashboard aesthetics.
+ *
  * @param {{ data: Array<{ key: string, label: string, value: number, valueLabel: string, detail?: string }>,
  *   caption: string, valueHeading: string, tickFormat?: 'number' | 'inr-paise' }} props
  */
 export function ColumnChart({ data, caption, valueHeading, tickFormat = 'number' }) {
   const formatTick = TICK_FORMATS[tickFormat] || compactNumber;
   const [tip, setTip] = useState(null);
-  const width = 720;
-  const height = 240;
-  const margin = { top: 12, right: 8, bottom: 28, left: 44 };
+  const width = 1200;
+  const height = 190;
+  const margin = { top: 16, right: 20, bottom: 26, left: 52 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const { max, ticks } = niceScale(Math.max(...data.map((d) => d.value), 0));
   const band = plotWidth / Math.max(data.length, 1);
-  const barWidth = Math.max(2, Math.min(24, band - 2)); // 2px surface gap between neighbours
+  const barWidth = Math.max(4, Math.min(16, band - 14));
   const labelEvery = Math.ceil(data.length / 8);
 
-  const show = (d, index) =>
+  const show = (d, index) => {
+    const barHeight = (d.value / max) * plotHeight;
+    const barY = d.value > 0 ? margin.top + plotHeight - barHeight : margin.top + plotHeight;
+    const topPercent = Math.max(14, ((barY - 8) / height) * 100);
+
     setTip({
       key: d.key,
       x: ((margin.left + band * index + band / 2) / width) * 100,
-      top: 0,
+      topPercent,
       value: d.valueLabel,
       label: d.detail ? `${d.label} · ${d.detail}` : d.label,
     });
+  };
 
   return (
     <div className="viz-root">
@@ -117,7 +128,7 @@ export function ColumnChart({ data, caption, valueHeading, tickFormat = 'number'
             return (
               <g key={tick}>
                 <line x1={margin.left} x2={width - margin.right} y1={y} y2={y} className="viz-grid" />
-                <text x={margin.left - 8} y={y} className="viz-axis-text" textAnchor="end" dominantBaseline="middle">
+                <text x={margin.left - 12} y={y} className="viz-axis-text viz-axis-y" textAnchor="end" dominantBaseline="middle">
                   {formatTick(tick)}
                 </text>
               </g>
@@ -126,8 +137,19 @@ export function ColumnChart({ data, caption, valueHeading, tickFormat = 'number'
           {data.map((d, index) => {
             const barHeight = (d.value / max) * plotHeight;
             const x = margin.left + band * index + (band - barWidth) / 2;
+            const isHovered = tip?.key === d.key;
             return (
               <g key={d.key}>
+                {isHovered && (
+                  <rect
+                    x={margin.left + band * index + 2}
+                    y={margin.top}
+                    width={band - 4}
+                    height={plotHeight}
+                    fill="rgba(37, 99, 235, 0.04)"
+                    rx={3}
+                  />
+                )}
                 <rect
                   x={margin.left + band * index}
                   y={margin.top}
@@ -143,11 +165,11 @@ export function ColumnChart({ data, caption, valueHeading, tickFormat = 'number'
                 {d.value > 0 && (
                   <path
                     d={columnPath(x, margin.top + plotHeight - barHeight, barWidth, barHeight)}
-                    className={`viz-mark${tip?.key === d.key ? ' is-active' : ''}`}
+                    className={`viz-mark${isHovered ? ' is-active' : ''}`}
                   />
                 )}
                 {index % labelEvery === 0 && (
-                  <text x={margin.left + band * index + band / 2} y={height - 8} className="viz-axis-text" textAnchor="middle">
+                  <text x={margin.left + band * index + band / 2} y={height - 6} className="viz-axis-text viz-axis-x" textAnchor="middle">
                     {d.label}
                   </text>
                 )}

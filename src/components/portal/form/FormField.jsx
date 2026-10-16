@@ -43,6 +43,7 @@ export default function FormField({
             checked={Boolean(value)}
             onChange={(e) => onChange(name, e.target.checked)}
             disabled={disabled}
+            suppressHydrationWarning
           />
           <span>{label}</span>
         </label>
@@ -65,6 +66,7 @@ export default function FormField({
         aria-describedby={describedBy}
         disabled={disabled}
         spellCheck={!code}
+        suppressHydrationWarning
       />
     );
   } else if (type === 'select') {
@@ -78,6 +80,7 @@ export default function FormField({
         aria-describedby={describedBy}
         disabled={disabled}
         style={{ paddingLeft: 16 }}
+        suppressHydrationWarning
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -100,6 +103,7 @@ export default function FormField({
         aria-describedby={describedBy}
         disabled={disabled}
         inputMode={type === 'number' ? 'numeric' : undefined}
+        suppressHydrationWarning
       />
     );
   }

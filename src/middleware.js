@@ -12,6 +12,13 @@ import { getSessionCookieName } from '@/features/auth/cookie';
  */
 export function middleware(request) {
   const { pathname } = request.nextUrl;
+
+  // Backward-compatibility: Redirect legacy /consultant routes to /admin
+  if (pathname === '/consultant' || pathname.startsWith('/consultant/')) {
+    const newPath = pathname.replace(/^\/consultant/, '/admin');
+    return NextResponse.redirect(new URL(newPath, request.url));
+  }
+
   const portal = Object.values(PORTALS).find(
     (p) => pathname === p.basePath || pathname.startsWith(`${p.basePath}/`)
   );
@@ -20,7 +27,7 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
-  // "/admin" and "/consultant" have no page of their own
+  // Base paths like "/superadmin" and "/admin" have no page of their own
   if (pathname === portal.basePath) {
     return NextResponse.redirect(new URL(portal.homePath, request.url));
   }
@@ -33,5 +40,5 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/consultant/:path*'],
+  matcher: ['/superadmin/:path*', '/admin/:path*', '/consultant/:path*'],
 };

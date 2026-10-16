@@ -32,6 +32,7 @@ export default function LogoutButton({ portalKey }) {
       onClick={handleLogout}
       disabled={isLoggingOut}
       className="btn-pro btn-dark"
+      suppressHydrationWarning
       style={{
         padding: '8px 18px',
         fontSize: '0.8rem',

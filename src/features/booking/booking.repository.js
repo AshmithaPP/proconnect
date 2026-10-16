@@ -75,8 +75,9 @@ export async function createBookingWithPendingPayment({ booking, amountPaise, cu
          booking_id, full_name, company_name, work_email, phone_number,
          user_role, user_role_other, sales_team_size,
          sales_challenge, sales_challenge_other, preferred_time_slot,
+         is_google_verified,
          consultation_date, slot_start_time, slot_end_time, booking_status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment')`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment')`,
       [
         bookingId,
         booking.fullName,
@@ -89,6 +90,7 @@ export async function createBookingWithPendingPayment({ booking, amountPaise, cu
         booking.salesChallenge,
         booking.salesChallengeOther,
         booking.preferredTimeSlot,
+        booking.isGoogleVerified ? 1 : 0,
         booking.consultationDate,
         booking.slotStartTime,
         booking.slotEndTime,
@@ -215,6 +217,7 @@ function mapBookingRow(row) {
     fullName: row.full_name,
     companyName: row.company_name,
     workEmail: row.work_email,
+    isGoogleVerified: Boolean(row.is_google_verified),
     phoneNumber: row.phone_number,
     userRole: row.user_role,
     userRoleOther: row.user_role_other,
@@ -222,6 +225,8 @@ function mapBookingRow(row) {
     salesChallenge: row.sales_challenge,
     salesChallengeOther: row.sales_challenge_other,
     preferredTimeSlot: row.preferred_time_slot,
+    googleMeetLink: row.google_meet_link || null,
+    googleCalendarEventId: row.google_calendar_event_id || null,
     consultationDate: row.consultation_date,
     slotStartTime: row.slot_start_time,
     slotEndTime: row.slot_end_time,
@@ -257,12 +262,29 @@ const BOOKING_COLUMNS = `
   b.booking_id, b.full_name, b.company_name, b.work_email, b.phone_number,
   b.user_role, b.user_role_other, b.sales_team_size,
   b.sales_challenge, b.sales_challenge_other, b.preferred_time_slot,
+  b.is_google_verified,
+  b.google_meet_link, b.google_calendar_event_id,
   DATE_FORMAT(b.consultation_date, '%Y-%m-%d') AS consultation_date,
   TIME_FORMAT(b.slot_start_time, '%H:%i') AS slot_start_time,
   TIME_FORMAT(b.slot_end_time, '%H:%i') AS slot_end_time,
   b.booking_status, b.created_at,
   p.payment_id, p.payment_provider, p.provider_order_id, p.provider_payment_id,
   p.amount_paise, p.currency_code, p.payment_status, p.paid_at`;
+
+/**
+ * Save or update the Google Meet link and Calendar event ID for a confirmed booking.
+ * @param {string} bookingId
+ * @param {string|null} meetLink
+ * @param {string|null} calendarEventId
+ */
+export async function saveBookingMeetLink(bookingId, meetLink, calendarEventId) {
+  await query(
+    `UPDATE consultation_bookings
+     SET google_meet_link = ?, google_calendar_event_id = ?
+     WHERE booking_id = ?`,
+    [meetLink || null, calendarEventId || null, bookingId]
+  );
+}
 
 /** A booking counts only once it is confirmed AND its latest payment is paid. */
 const PAID_BOOKING_SQL = `p.payment_status = 'paid' AND b.booking_status = 'confirmed'`;

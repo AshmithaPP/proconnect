@@ -128,7 +128,7 @@ export default function SmtpSettingsForm({ initialValue, adminEmail }) {
       </div>
 
       <div className="settings-actions">
-        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={busy}>
+        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={busy} suppressHydrationWarning>
           {save.isSubmitting ? 'Saving…' : 'Save changes'}
         </button>
         <FormStatus status={save.status} />
@@ -147,7 +147,7 @@ export default function SmtpSettingsForm({ initialValue, adminEmail }) {
             disabled={busy}
           />
           <div className="settings-field" style={{ alignSelf: 'center' }}>
-            <button type="button" className="btn-pro btn-dark btn-sm" onClick={handleTest} disabled={busy}>
+            <button type="button" className="btn-pro btn-dark btn-sm" onClick={handleTest} disabled={busy} suppressHydrationWarning>
               {test.isSubmitting ? 'Sending…' : 'Send test email'}
             </button>
           </div>

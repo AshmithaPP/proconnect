@@ -45,11 +45,11 @@ export default function ConsultantAccount({ consultant }) {
   return (
     <>
       <form className="settings-card" onSubmit={saveDetails} noValidate>
-        <h2 className="settings-card-title">{consultant ? 'Sign-in details' : 'Create the consultant account'}</h2>
-        <p className="settings-card-subtitle">
+        <h2 className="settings-card-title">{consultant ? 'Sign-in details' : 'Create the admin account'}</h2>
+        <p className="settings-card-subtitle" suppressHydrationWarning>
           {consultant
-            ? `The consultant signs in at /consultant/login. Last sign-in: ${formatDateTime(consultant.lastLoginAt)}.`
-            : 'There is no consultant account yet. Create it so the consultant can sign in at /consultant/login.'}
+            ? `The administrator signs in at /admin/login. Last sign-in: ${formatDateTime(consultant.lastLoginAt)}.`
+            : 'There is no admin account yet. Create it so the administrator can sign in at /admin/login.'}
         </p>
         <div className="settings-grid">
           <FormField name="fullName" label="Name" required value={values.fullName} onChange={setValue} error={details.fieldErrors.fullName} disabled={details.isSubmitting} />
@@ -80,7 +80,7 @@ export default function ConsultantAccount({ consultant }) {
           )}
         </div>
         <div className="settings-actions">
-          <button type="submit" className="btn-pro btn-orange btn-sm" disabled={details.isSubmitting}>
+          <button type="submit" className="btn-pro btn-orange btn-sm" disabled={details.isSubmitting} suppressHydrationWarning>
             {details.isSubmitting ? 'Saving…' : consultant ? 'Save' : 'Create account'}
           </button>
           <FormStatus status={details.status} />
@@ -90,14 +90,14 @@ export default function ConsultantAccount({ consultant }) {
       {consultant && (
         <form className="settings-card" onSubmit={resetPassword} noValidate>
           <h2 className="settings-card-title">Reset password</h2>
-          <p className="settings-card-subtitle">Set a new password for the consultant. They are signed out everywhere and use the new one next time.</p>
+          <p className="settings-card-subtitle">Set a new password for the administrator. They are signed out everywhere and use the new one next time.</p>
           <div className="settings-grid">
             <FormField
               name="newPassword"
               type="password"
               label="New password"
               autoComplete="new-password"
-              hint={`At least ${MIN_PASSWORD_CHARS} characters. Share it with the consultant securely.`}
+              hint={`At least ${MIN_PASSWORD_CHARS} characters. Share it with the administrator securely.`}
               value={newPassword}
               onChange={(_, value) => setNewPassword(value)}
               error={password.fieldErrors.password}
@@ -105,7 +105,7 @@ export default function ConsultantAccount({ consultant }) {
             />
           </div>
           <div className="settings-actions">
-            <button type="submit" className="btn-pro btn-dark btn-sm" disabled={password.isSubmitting}>
+            <button type="submit" className="btn-pro btn-dark btn-sm" disabled={password.isSubmitting} suppressHydrationWarning>
               {password.isSubmitting ? 'Saving…' : 'Set new password'}
             </button>
             <FormStatus status={password.status} />

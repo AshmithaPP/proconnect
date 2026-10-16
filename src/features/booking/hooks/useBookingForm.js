@@ -27,6 +27,8 @@ export default function useBookingForm(onSuccess) {
   const [availability, setAvailability] = useState({ days: [], fee: null, slotDurationMinutes: 30 });
   const [isLoadingSlots, setIsLoadingSlots] = useState(true);
   const [selectedDate, setSelectedDate] = useState('');
+  const [googleUser, setGoogleUser] = useState(null);
+  const [isLoadingGoogleSession, setIsLoadingGoogleSession] = useState(true);
 
   const loadUnavailableSlots = async () => {
     try {
@@ -53,8 +55,39 @@ export default function useBookingForm(onSuccess) {
     }
   };
 
+  const handleGoogleDisconnect = async () => {
+    try {
+      await fetch('/api/auth/google/customer/session', { method: 'POST' });
+      setGoogleUser(null);
+    } catch {
+      // ignore network errors on disconnect
+    }
+  };
+
   useEffect(() => {
     loadUnavailableSlots();
+
+    const fetchGoogleSession = async () => {
+      try {
+        const res = await fetch('/api/auth/google/customer/session', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated && data.user) {
+            setGoogleUser(data.user);
+            setFormData((prev) => ({
+              ...prev,
+              workEmail: data.user.email || prev.workEmail,
+              fullName: prev.fullName || data.user.fullName || '',
+            }));
+          }
+        }
+      } catch {
+        // ignore session retrieval error
+      } finally {
+        setIsLoadingGoogleSession(false);
+      }
+    };
+    fetchGoogleSession();
 
     // Re-sync whenever the customer comes back to this page — e.g. after cancelling on the
     // payment page — so the picker always reflects the backend (only paid slots are taken).
@@ -135,7 +168,10 @@ export default function useBookingForm(onSuccess) {
       const bookingRes = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          isGoogleVerified: Boolean(googleUser?.verified),
+        }),
       });
       const bookingData = await bookingRes.json();
 
@@ -195,6 +231,9 @@ export default function useBookingForm(onSuccess) {
     availability,
     isLoadingSlots,
     selectedDate,
+    googleUser,
+    isLoadingGoogleSession,
+    handleGoogleDisconnect,
     handleDateChange,
     handleChange,
     handleSlotChange,

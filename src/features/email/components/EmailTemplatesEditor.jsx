@@ -143,11 +143,11 @@ export default function EmailTemplatesEditor({ initialTemplates, siteVariables }
           </div>
 
           <div className="settings-actions">
-            <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting}>
+            <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting} suppressHydrationWarning>
               {isSubmitting ? 'Saving…' : 'Save template'}
             </button>
             {selected.isCustomized && (
-              <button type="button" className="btn-pro btn-light btn-sm" onClick={handleReset} disabled={isSubmitting}>
+              <button type="button" className="btn-pro btn-light btn-sm" onClick={handleReset} disabled={isSubmitting} suppressHydrationWarning>
                 Reset to default
               </button>
             )}

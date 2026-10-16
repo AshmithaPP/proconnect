@@ -9,9 +9,19 @@
  * of) the other, and a session is only ever accepted for its own role.
  */
 export const PORTALS = {
+  superadmin: {
+    portalKey: 'superadmin',
+    userRole: 'platform_admin',
+    label: 'Super Admin',
+    audience: 'super administrator',
+    cookieBaseName: 'superadmin_session',
+    basePath: '/superadmin',
+    loginPath: '/superadmin/login',
+    homePath: '/superadmin/dashboard',
+  },
   admin: {
     portalKey: 'admin',
-    userRole: 'platform_admin',
+    userRole: 'consultant',
     label: 'Admin',
     audience: 'administrator',
     cookieBaseName: 'admin_session',
@@ -19,22 +29,13 @@ export const PORTALS = {
     loginPath: '/admin/login',
     homePath: '/admin/dashboard',
   },
-  consultant: {
-    portalKey: 'consultant',
-    userRole: 'consultant',
-    label: 'Consultant',
-    audience: 'consultant',
-    cookieBaseName: 'consultant_session',
-    basePath: '/consultant',
-    loginPath: '/consultant/login',
-    homePath: '/consultant/dashboard',
-  },
 };
 
 /**
  * @param {string} portalKey
- * @returns {typeof PORTALS.admin | null}
+ * @returns {typeof PORTALS.superadmin | null}
  */
 export function getPortal(portalKey) {
+  if (portalKey === 'consultant') return PORTALS.admin;
   return Object.hasOwn(PORTALS, portalKey) ? PORTALS[portalKey] : null;
 }

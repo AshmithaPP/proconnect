@@ -41,6 +41,8 @@ async function bookingVariables(booking) {
     team_size: booking.salesTeamSize || '—',
     sales_challenge: withOther(booking.salesChallenge, booking.salesChallengeOther),
     slot_time: slotText(booking.consultationDate, booking.slotStartTime, booking.slotEndTime),
+    google_meet_link: booking.googleMeetLink || '',
+    meet_link: booking.googleMeetLink || '',
     amount: booking.payment
       ? `${formatAmount(booking.payment.amountPaise, booking.payment.currencyCode)} ${booking.payment.currencyCode}`
       : '—',
@@ -51,7 +53,7 @@ async function bookingVariables(booking) {
 }
 
 /** The consultant's email (single consultant), if the account exists and is active */
-async function activeConsultantEmails() {
+export async function activeConsultantEmails() {
   const consultant = await getConsultantAccount();
   return consultant && consultant.accountStatus === 'active' ? [consultant.email] : [];
 }

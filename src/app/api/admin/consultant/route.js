@@ -11,7 +11,7 @@ import { getConsultantAccount, createPortalUser, updatePortalUser } from '@/feat
  * Password reset: PUT /api/admin/consultant/password
  */
 export async function GET() {
-  const auth = await verifyPortalApiSession('admin');
+  const auth = await verifyPortalApiSession('superadmin');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -23,7 +23,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const auth = await verifyPortalApiRequest(request, 'admin');
+  const auth = await verifyPortalApiRequest(request, 'superadmin');
   if (!auth.authorized) return auth.response;
 
   const body = await readJsonBody(request);
@@ -53,7 +53,7 @@ export async function POST(request) {
 }
 
 export async function PUT(request) {
-  const auth = await verifyPortalApiRequest(request, 'admin');
+  const auth = await verifyPortalApiRequest(request, 'superadmin');
   if (!auth.authorized) return auth.response;
 
   const body = await readJsonBody(request);

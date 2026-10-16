@@ -4,6 +4,29 @@
  * `match: 'exact'` highlights only on that path; otherwise the link also covers sub-pages.
  */
 export const PORTAL_NAVIGATION = {
+  superadmin: [
+    {
+      sectionTitle: 'WORKSPACE',
+      items: [
+        { label: 'Dashboard', href: '/superadmin/dashboard', icon: 'dashboard', match: 'exact' },
+        { label: 'Bookings', href: '/superadmin/dashboard/bookings', icon: 'calendar' },
+        { label: 'Availability', href: '/superadmin/dashboard/availability', icon: 'clock' },
+        { label: 'Schedule & Pricing', href: '/superadmin/dashboard/schedule', icon: 'tune' },
+      ],
+    },
+    {
+      sectionTitle: 'PLATFORM',
+      items: [
+        { label: 'Admin Account', href: '/superadmin/dashboard/consultant', icon: 'users' },
+        { label: 'Settings', href: '/superadmin/dashboard/settings/general', activePrefix: '/superadmin/dashboard/settings', icon: 'settings' },
+        { label: 'Email Templates', href: '/superadmin/dashboard/email-templates', icon: 'mail' },
+      ],
+    },
+    {
+      sectionTitle: 'ACCOUNT',
+      items: [{ label: 'My Account', href: '/superadmin/dashboard/account', icon: 'user' }],
+    },
+  ],
   admin: [
     {
       sectionTitle: 'WORKSPACE',
@@ -12,34 +35,12 @@ export const PORTAL_NAVIGATION = {
         { label: 'Bookings', href: '/admin/dashboard/bookings', icon: 'calendar' },
         { label: 'Availability', href: '/admin/dashboard/availability', icon: 'clock' },
         { label: 'Schedule & Pricing', href: '/admin/dashboard/schedule', icon: 'tune' },
-      ],
-    },
-    {
-      sectionTitle: 'PLATFORM',
-      items: [
-        { label: 'Consultant', href: '/admin/dashboard/consultant', icon: 'users' },
-        { label: 'Settings', href: '/admin/dashboard/settings/general', activePrefix: '/admin/dashboard/settings', icon: 'settings' },
-        { label: 'Email Templates', href: '/admin/dashboard/email-templates', icon: 'mail' },
+        { label: 'Google Meet', href: '/admin/dashboard/google-meet', icon: 'video' },
       ],
     },
     {
       sectionTitle: 'ACCOUNT',
       items: [{ label: 'My Account', href: '/admin/dashboard/account', icon: 'user' }],
-    },
-  ],
-  consultant: [
-    {
-      sectionTitle: 'WORKSPACE',
-      items: [
-        { label: 'Dashboard', href: '/consultant/dashboard', icon: 'dashboard', match: 'exact' },
-        { label: 'Bookings', href: '/consultant/dashboard/bookings', icon: 'calendar' },
-        { label: 'Availability', href: '/consultant/dashboard/availability', icon: 'clock' },
-        { label: 'Schedule & Pricing', href: '/consultant/dashboard/schedule', icon: 'tune' },
-      ],
-    },
-    {
-      sectionTitle: 'ACCOUNT',
-      items: [{ label: 'My Account', href: '/consultant/dashboard/account', icon: 'user' }],
     },
   ],
 };

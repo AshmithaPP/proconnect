@@ -6,7 +6,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 /** DELETE /api/consultant/time-off/{timeOffId} — available again (consultant or admin) */
 export async function DELETE(request, { params }) {
-  const auth = await verifyPortalApiRequest(request, ['consultant', 'admin']);
+  const auth = await verifyPortalApiRequest(request, ['superadmin', 'admin', 'consultant']);
   if (!auth.authorized) return auth.response;
 
   const { timeOffId } = await params;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { FaStar } from 'react-icons/fa';
 
 const testimonials = [
   {
@@ -49,7 +50,13 @@ export default function Testimonials() {
             <div className={`reveal ${t.delay}`} key={idx}>
               <div className="testi-card">
                 <div>
-                  <div className="stars">★★★★★</div>
+                  <div className="stars" style={{ display: 'flex', gap: '3px', color: '#f59e0b', marginBottom: '8px' }}>
+                    <FaStar size={14} />
+                    <FaStar size={14} />
+                    <FaStar size={14} />
+                    <FaStar size={14} />
+                    <FaStar size={14} />
+                  </div>
                   <p style={{ fontSize: '0.9rem', color: 'var(--color-text)' }}>{t.quote}</p>
                 </div>
                 <div>

@@ -11,7 +11,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * and returns the SMTP server's error verbatim if it fails.
  */
 export async function POST(request) {
-  const auth = await verifyPortalApiRequest(request, 'admin');
+  const auth = await verifyPortalApiRequest(request, 'superadmin');
   if (!auth.authorized) return auth.response;
 
   const body = await readJsonBody(request);

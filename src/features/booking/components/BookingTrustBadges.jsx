@@ -1,24 +1,24 @@
 import React from 'react';
-import { LockIcon, ClockIcon, CheckCircleIcon } from '@/components/ui/Icons';
+import { FiLock, FiClock, FiCheckCircle } from 'react-icons/fi';
 
 export default function BookingTrustBadges() {
   return (
     <div className="trust-badges-bar">
       <div className="trust-badge-item">
         <span className="ic">
-          <LockIcon />
+          <FiLock />
         </span>
         100% Confidential
       </div>
       <div className="trust-badge-item">
         <span className="ic">
-          <ClockIcon />
+          <FiClock />
         </span>
         24-Hour Response
       </div>
       <div className="trust-badge-item">
         <span className="ic">
-          <CheckCircleIcon />
+          <FiCheckCircle />
         </span>
         Clear Next Steps
       </div>

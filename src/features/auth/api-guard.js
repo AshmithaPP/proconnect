@@ -36,7 +36,7 @@ export async function verifyPortalApiSession(portalKeys) {
       const portal = getPortal(portalKey);
       if (!portal) throw new Error(`Unknown portal "${portalKey}"`);
 
-      const sessionToken = cookieStore.get(getSessionCookieName(portalKey))?.value;
+      const sessionToken = cookieStore.get(getSessionCookieName(portal.portalKey))?.value;
       if (!sessionToken) continue;
       sawCookie = true;
 
@@ -47,7 +47,7 @@ export async function verifyPortalApiSession(portalKeys) {
       // Touch sliding window activity
       await touchSessionActivity(tokenHash);
 
-      return { authorized: true, portalKey, user: valid.user, session: valid.session, sessionTokenHash: tokenHash };
+      return { authorized: true, portalKey: portal.portalKey, user: valid.user, session: valid.session, sessionTokenHash: tokenHash };
     }
   } catch (err) {
     console.error('API session guard error:', err.message);

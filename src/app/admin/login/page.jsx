@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export const metadata = {
   title: 'Admin Portal Login — ProConnect',
-  description: 'Secure administrator access portal for ProConnect.',
+  description: 'Secure administrator access to bookings, availability and analytics.',
   robots: {
     index: false,
     follow: false,

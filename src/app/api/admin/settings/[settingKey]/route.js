@@ -15,7 +15,7 @@ async function resolveKey(params) {
 }
 
 export async function GET(request, { params }) {
-  const auth = await verifyPortalApiSession('admin');
+  const auth = await verifyPortalApiSession('superadmin');
   if (!auth.authorized) return auth.response;
 
   const settingKey = await resolveKey(params);
@@ -30,7 +30,7 @@ export async function GET(request, { params }) {
 }
 
 export async function PUT(request, { params }) {
-  const auth = await verifyPortalApiRequest(request, 'admin');
+  const auth = await verifyPortalApiRequest(request, 'superadmin');
   if (!auth.authorized) return auth.response;
 
   const settingKey = await resolveKey(params);

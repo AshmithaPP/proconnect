@@ -13,7 +13,7 @@ async function resolveKey(params) {
 }
 
 export async function PUT(request, { params }) {
-  const auth = await verifyPortalApiRequest(request, 'admin');
+  const auth = await verifyPortalApiRequest(request, 'superadmin');
   if (!auth.authorized) return auth.response;
 
   const templateKey = await resolveKey(params);
@@ -43,7 +43,7 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const auth = await verifyPortalApiRequest(request, 'admin');
+  const auth = await verifyPortalApiRequest(request, 'superadmin');
   if (!auth.authorized) return auth.response;
 
   const templateKey = await resolveKey(params);

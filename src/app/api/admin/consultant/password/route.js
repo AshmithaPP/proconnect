@@ -8,7 +8,7 @@ import { getConsultantAccount, setPortalUserPassword, revokeAllSessionsForUser }
  * Body: { password } — sets a new password for the consultant and signs them out everywhere.
  */
 export async function PUT(request) {
-  const auth = await verifyPortalApiRequest(request, 'admin');
+  const auth = await verifyPortalApiRequest(request, 'superadmin');
   if (!auth.authorized) return auth.response;
 
   const body = await readJsonBody(request);

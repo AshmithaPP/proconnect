@@ -14,18 +14,18 @@ export const EMAIL_TEMPLATES = {
     templateName: 'Booking confirmed — to customer',
     description: 'Sent to the customer as soon as Worldline confirms their payment.',
     recipientLabel: 'Customer',
-    variables: ['client_name', 'company_name', 'slot_time', 'amount', 'booking_reference', 'payment_id', 'reschedule_link', ...SITE_VARIABLES],
+    variables: ['client_name', 'company_name', 'slot_time', 'google_meet_link', 'amount', 'booking_reference', 'payment_id', 'reschedule_link', ...SITE_VARIABLES],
     defaultSubject: 'Your consultation is confirmed — {{slot_time}}',
     defaultBodyHtml: `<p>Hi {{client_name}},</p>
 <p>Thank you for booking a sales strategy consultation. Your payment was received and your slot is confirmed.</p>
 <table>
   <tr><td><strong>Time</strong></td><td>{{slot_time}}</td></tr>
+  <tr><td><strong>Meeting link</strong></td><td><a href="{{google_meet_link}}" style="background:#002D62;color:#ffffff;padding:8px 14px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;">Join with Google Meet</a></td></tr>
   <tr><td><strong>Amount paid</strong></td><td>{{amount}}</td></tr>
   <tr><td><strong>Booking reference</strong></td><td>{{booking_reference}}</td></tr>
   <tr><td><strong>Payment ID</strong></td><td>{{payment_id}}</td></tr>
 </table>
-<p>Need a different time? <a href="{{reschedule_link}}">Choose another time</a>.</p>
-<p>We look forward to speaking with you. For anything else, reply to this email or contact us at {{contact_email}}.</p>
+<p>We look forward to speaking with you. A calendar invitation has also been sent to your email. For anything else, reply to this email or contact us at {{contact_email}}.</p>
 <p>— {{site_name}}</p>`,
   },
   booking_notification_consultant: {
@@ -34,7 +34,7 @@ export const EMAIL_TEMPLATES = {
     recipientLabel: 'Consultant',
     variables: [
       'client_name', 'company_name', 'client_email', 'client_phone', 'client_role', 'team_size',
-      'sales_challenge', 'slot_time', 'amount', 'booking_reference', 'payment_id', ...SITE_VARIABLES,
+      'sales_challenge', 'slot_time', 'google_meet_link', 'amount', 'booking_reference', 'payment_id', ...SITE_VARIABLES,
     ],
     defaultSubject: 'New paid booking: {{client_name}} ({{company_name}}) — {{slot_time}}',
     defaultBodyHtml: `<p>A new consultation has been booked and paid.</p>
@@ -42,6 +42,7 @@ export const EMAIL_TEMPLATES = {
   <tr><td><strong>Client</strong></td><td>{{client_name}} — {{company_name}}</td></tr>
   <tr><td><strong>Email</strong></td><td>{{client_email}}</td></tr>
   <tr><td><strong>Phone</strong></td><td>{{client_phone}}</td></tr>
+  <tr><td><strong>Meeting link</strong></td><td><a href="{{google_meet_link}}">{{google_meet_link}}</a></td></tr>
   <tr><td><strong>Role</strong></td><td>{{client_role}}</td></tr>
   <tr><td><strong>Team size</strong></td><td>{{team_size}}</td></tr>
   <tr><td><strong>Sales challenge</strong></td><td>{{sales_challenge}}</td></tr>
@@ -54,9 +55,9 @@ export const EMAIL_TEMPLATES = {
   booking_rescheduled_customer: {
     templateName: 'Time changed — to customer',
     description:
-      'Sent when a booking moves to a new time: automatically (slot taken / consultant unavailable) or because the customer chose another time.',
+      'Sent when a booking moves to a new time: automatically (slot taken) or because the customer chose another time.',
     recipientLabel: 'Customer',
-    variables: ['client_name', 'previous_slot_time', 'slot_time', 'reschedule_reason', 'booking_reference', 'amount', 'reschedule_link', ...SITE_VARIABLES],
+    variables: ['client_name', 'previous_slot_time', 'slot_time', 'google_meet_link', 'reschedule_reason', 'booking_reference', 'amount', 'reschedule_link', ...SITE_VARIABLES],
     defaultSubject: 'Your consultation time: {{slot_time}}',
     defaultBodyHtml: `<p>Hi {{client_name}},</p>
 <p>{{reschedule_reason}}</p>

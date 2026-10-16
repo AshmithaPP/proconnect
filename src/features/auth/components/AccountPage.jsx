@@ -42,7 +42,7 @@ export default async function AccountPage({ portalKey }) {
           <div className="card-top-row">
             <span className="card-label">Role</span>
           </div>
-          <div className="card-val">{portalKey === 'admin' ? 'Platform admin' : 'Consultant'}</div>
+          <div className="card-val">{portal.label}</div>
         </div>
         <div className="admin-info-card">
           <div className="card-top-row">

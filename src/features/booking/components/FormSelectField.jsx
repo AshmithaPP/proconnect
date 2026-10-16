@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDownIcon } from '@/components/ui/Icons';
+import { FiChevronDown } from 'react-icons/fi';
 
 /**
  * Labelled select with a leading icon. When `otherField` is given and "Other"
@@ -44,7 +44,7 @@ export default function FormSelectField({
           ))}
         </select>
         <span className="select-arrow">
-          <ChevronDownIcon />
+          <FiChevronDown />
         </span>
       </div>
       {otherField && value === 'Other' && (

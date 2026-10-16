@@ -5,7 +5,7 @@ import { getBookingViewCounts } from '@/features/booking/booking.repository';
 import { countReschedulesSince } from '@/features/reschedule/reschedule.repository';
 import { addDays, getZonedNow, weekdayOf, timeToMinutes, formatSlotLabel, formatDateLabel } from '@/features/schedule/slot-engine';
 
-export const ANALYTICS_RANGES = [7, 30, 90];
+export { ANALYTICS_RANGES } from './analytics.definitions';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -84,6 +84,7 @@ export async function getConsultantAnalytics({ rangeDays }) {
               TIME_FORMAT(slot_start_time, '%H:%i') AS slot_start_time, TIME_FORMAT(slot_end_time, '%H:%i') AS slot_end_time
        FROM consultation_bookings
        WHERE booking_status = 'confirmed' AND consultation_date BETWEEN ? AND ?
+         AND EXISTS (SELECT 1 FROM booking_payments paid WHERE paid.booking_id = consultation_bookings.booking_id AND paid.payment_status = 'paid')
        ORDER BY consultation_date, slot_start_time`,
       [today, addDays(today, 6)]
     ),

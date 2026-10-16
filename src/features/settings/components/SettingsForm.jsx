@@ -42,7 +42,7 @@ export default function SettingsForm({ settingKey, initialValue }) {
       </div>
 
       <div className="settings-actions">
-        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting}>
+        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting} suppressHydrationWarning>
           {isSubmitting ? 'Saving…' : 'Save changes'}
         </button>
         <FormStatus status={status} />

@@ -22,7 +22,7 @@ export default function CoachSection() {
             <div className="coach-photo-frame">
               {!imgError ? (
                 <img
-                  src="/assets/img/cynthia.jpg"
+                  src="/assets/img/cynthia.jpeg"
                   alt="Sales Consultant"
                   onError={() => setImgError(true)}
                 />

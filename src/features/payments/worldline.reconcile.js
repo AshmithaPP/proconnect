@@ -1,8 +1,9 @@
 import 'server-only';
-import { markBookingPaymentSucceeded, markBookingCancelled } from '@/features/booking/booking.repository';
+import { markBookingPaymentSucceeded, markBookingCancelled, getBookingById, saveBookingMeetLink } from '@/features/booking/booking.repository';
 import { getHostedCheckoutStatus, capturePayment } from '@/features/payments/worldline.client';
-import { sendBookingConfirmationEmails } from '@/features/email/booking-emails';
+import { sendBookingConfirmationEmails, activeConsultantEmails } from '@/features/email/booking-emails';
 import { autoRescheduleBooking } from '@/features/reschedule/reschedule.service';
+import { createConsultationMeetEvent } from '@/features/google/google-calendar.service';
 
 /**
  * Brings a booking in line with what Worldline says about its hosted checkout.
@@ -67,15 +68,42 @@ export async function reconcileWorldlineBooking(booking) {
       return { outcome: 'booking_cancelled' };
     }
 
-    // First confirmation only (not a refresh of an already-paid booking). Not awaited:
-    // the customer's redirect must not wait on the mail server.
+    // First confirmation only (not a refresh of an already-paid booking).
     if (result.outcome === 'paid') {
+      try {
+        const freshBooking = await getBookingById(bookingId);
+        const consultants = await activeConsultantEmails();
+        const meetResult = await createConsultationMeetEvent({
+          booking: freshBooking,
+          consultantEmail: consultants[0] || null,
+        });
+        if (meetResult.success && meetResult.meetLink) {
+          await saveBookingMeetLink(bookingId, meetResult.meetLink, meetResult.calendarEventId);
+        }
+      } catch (err) {
+        console.error('[Google Meet] Real-time creation error:', err.message);
+      }
       void sendBookingConfirmationEmails(bookingId);
     }
     if (result.outcome === 'paid_needs_reschedule') {
       // Someone else paid for this slot first: move this booking to the next free slot right
       // away (the customer is emailed the new time) — no admin involved
       const moved = await autoRescheduleBooking(bookingId, { reason: 'slot_taken' });
+      if (moved.outcome === 'moved') {
+        try {
+          const freshBooking = await getBookingById(bookingId);
+          const consultants = await activeConsultantEmails();
+          const meetResult = await createConsultationMeetEvent({
+            booking: freshBooking,
+            consultantEmail: consultants[0] || null,
+          });
+          if (meetResult.success && meetResult.meetLink) {
+            await saveBookingMeetLink(bookingId, meetResult.meetLink, meetResult.calendarEventId);
+          }
+        } catch (err) {
+          console.error('[Google Meet] Real-time creation on reschedule error:', err.message);
+        }
+      }
       return { outcome: moved.outcome === 'moved' ? 'rescheduled' : 'reschedule_required', paymentId: verification.paymentId || '' };
     }
     return { outcome: 'paid', paymentId: verification.paymentId || '' };

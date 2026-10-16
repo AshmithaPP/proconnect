@@ -13,7 +13,7 @@ export default async function PortalShell({ portalKey, children }) {
   const { user } = await requirePortalUser(portalKey);
 
   return (
-    <div className="admin-portal-shell">
+    <div className="admin-portal-shell" suppressHydrationWarning>
       <PortalSidebar portalKey={portalKey} user={{ fullName: user.fullName, email: user.email }} />
 
       <div className="admin-main-wrap">

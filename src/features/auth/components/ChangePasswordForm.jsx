@@ -74,7 +74,7 @@ export default function ChangePasswordForm({ portalKey }) {
         />
       </div>
       <div className="settings-actions">
-        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting}>
+        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting} suppressHydrationWarning>
           {isSubmitting ? 'Saving…' : 'Change password'}
         </button>
         <FormStatus status={status} />

@@ -10,7 +10,7 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
  * Defaults: from today, the customer booking window. Max 60 days.
  */
 export async function GET(request) {
-  const auth = await verifyPortalApiSession(['consultant', 'admin']);
+  const auth = await verifyPortalApiSession(['superadmin', 'admin', 'consultant']);
   if (!auth.authorized) return auth.response;
 
   const { searchParams } = new URL(request.url);

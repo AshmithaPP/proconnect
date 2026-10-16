@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiChevronLeft, FiChevronRight, FiRefreshCw } from 'react-icons/fi';
 import { addDays, formatDateLabel, formatTimeLabel, timeToMinutes, BUSINESS_HOURS } from '@/features/schedule/slot-engine';
 
 const WEEK_DAYS = 7;
@@ -25,29 +25,48 @@ const SLOT_STATE = {
 
 /**
  * Availability: pick a day, tap a time to switch it off or on, or take the whole day off.
- * A booked time can also be switched off — its booking then moves automatically to the next
- * free time and the client is emailed.
+ * Completely dynamic: loads all slots, time-offs and bookings from backend APIs.
+ *
+ * @param {{ portalKey?: 'admin'|'superadmin'|'consultant' }} props
  */
-export default function AvailabilityCalendar() {
+export default function AvailabilityCalendar({ portalKey = 'admin' }) {
   const [data, setData] = useState(null);
   const [fromDate, setFromDate] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState(null);
 
+  const apiBase = portalKey === 'superadmin'
+    ? '/api/superadmin'
+    : portalKey === 'admin'
+    ? '/api/admin'
+    : '/api/consultant';
+
   const load = useCallback(async (from) => {
+    setIsLoading(true);
     const query = new URLSearchParams({ days: String(WEEK_DAYS) });
     if (from) query.set('from', from);
-    const res = await fetch(`/api/consultant/availability?${query}`, { cache: 'no-store' });
-    if (!res.ok) {
-      setMessage({ type: 'error', text: res.status === 401 ? 'Your session has expired. Please sign in again.' : 'Could not load your availability.' });
-      return;
+
+    try {
+      const res = await fetch(`${apiBase}/availability?${query}`, { cache: 'no-store' });
+      if (!res.ok) {
+        setMessage({
+          type: 'error',
+          text: res.status === 401 ? 'Your session has expired. Please sign in again.' : 'Could not load your availability.',
+        });
+        return;
+      }
+      const json = await res.json();
+      setData(json);
+      setFromDate(json.days[0]?.date || from);
+      setSelectedDate((current) => (current && json.days.some((d) => d.date === current) ? current : json.days[0]?.date));
+    } catch {
+      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+    } finally {
+      setIsLoading(false);
     }
-    const json = await res.json();
-    setData(json);
-    setFromDate(json.days[0]?.date || from);
-    setSelectedDate((current) => (current && json.days.some((d) => d.date === current) ? current : json.days[0]?.date));
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     load(null);
@@ -73,10 +92,7 @@ export default function AvailabilityCalendar() {
         setMessage({ type: 'error', text: json.error || 'Could not save. Please try again.' });
         return;
       }
-      const moved = (json.movedBookings || []).map((b) =>
-        b.outcome === 'moved' ? `${b.fullName} moved to ${b.newTime}` : `${b.fullName} will be moved as soon as a time is free`
-      );
-      setMessage({ type: 'success', text: [successText, ...moved].join(' · ') });
+      setMessage({ type: 'success', text: successText });
       await load(fromDate);
     } catch {
       setMessage({ type: 'error', text: 'Network error. Please try again.' });
@@ -86,30 +102,57 @@ export default function AvailabilityCalendar() {
   };
 
   const toggleSlot = (day, slot) => {
+    // Confirmed bookings can never be switched off or moved
+    if (slot.status === 'booked') return;
+
     const when = `${formatDateLabel(day.date, { withYear: false })}, ${startOnly(slot)}`;
     if (slot.status === 'available') {
-      send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime }, `${when} is now off`);
+      send(slot.slotKey, `${apiBase}/time-off`, 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime }, `${when} is now off`);
     } else if (slot.status === 'blocked' && slot.timeOffId && !day.isDayOff) {
-      send(slot.slotKey, `/api/consultant/time-off/${slot.timeOffId}`, 'DELETE', null, `${when} is free again`);
-    } else if (slot.status === 'booked' && slot.booking) {
-      if (!window.confirm(`${slot.booking.fullName} is booked at ${when}.\n\nSwitch this time off? Their booking will move to the next free time and they will be emailed.`)) return;
-      send(slot.slotKey, '/api/consultant/time-off', 'POST', { offDate: day.date, startTime: slot.startTime, endTime: slot.endTime, confirmMove: true }, `${when} is now off`);
+      send(slot.slotKey, `${apiBase}/time-off/${slot.timeOffId}`, 'DELETE', null, `${when} is free again`);
     }
   };
 
   const toggleDay = (day) => {
     const label = formatDateLabel(day.date, { withYear: false });
     if (day.isDayOff) {
-      send(day.date, `/api/consultant/time-off/${day.dayOffId}`, 'DELETE', null, `${label} is open again`);
+      send(day.date, `${apiBase}/time-off/${day.dayOffId}`, 'DELETE', null, `${label} is open again`);
       return;
     }
     const booked = day.slots.filter((s) => s.status === 'booked').length;
-    if (booked && !window.confirm(`${label} has ${booked} booking${booked === 1 ? '' : 's'}.\n\nTake the day off? They will move to the next free times and be emailed.`)) return;
-    send(day.date, '/api/consultant/time-off', 'POST', { offDate: day.date, confirmMove: booked > 0 }, `${label} is now a day off`);
+    if (booked > 0) {
+      setMessage({
+        type: 'error',
+        text: `Cannot take this day off: ${label} has ${booked} confirmed booking${booked === 1 ? '' : 's'}. Confirmed bookings cannot be switched or moved.`,
+      });
+      return;
+    }
+    send(day.date, `${apiBase}/time-off`, 'POST', { offDate: day.date }, `${label} is now a day off`);
   };
 
+  if (!data && isLoading) {
+    return (
+      <div className="settings-card av-loading" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-muted)' }}>
+        <FiRefreshCw className="icon-spin" style={{ fontSize: '1.4rem', marginBottom: 8, display: 'inline-block' }} />
+        <div>Loading availability…</div>
+      </div>
+    );
+  }
+
   if (!data) {
-    return <div className="settings-card av-loading">{message ? message.text : 'Loading…'}</div>;
+    return (
+      <div className="settings-card av-loading" style={{ textAlign: 'center', padding: '30px 20px' }}>
+        <div>{message ? message.text : 'Could not load availability.'}</div>
+        <button
+          type="button"
+          onClick={() => load(null)}
+          className="btn-pro btn-sm btn-light"
+          style={{ marginTop: 12 }}
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   const day = data.days.find((d) => d.date === selectedDate) || data.days[0];
@@ -120,16 +163,39 @@ export default function AvailabilityCalendar() {
 
   return (
     <div className="av">
-      {/* Week */}
+      {/* Week Navigation */}
       <div className="av-week-head">
-        <button type="button" className="av-arrow" onClick={() => load(addDays(fromDate, -WEEK_DAYS) < data.today ? data.today : addDays(fromDate, -WEEK_DAYS))} disabled={!canGoBack || Boolean(busyKey)} aria-label="Previous week">
+        <button
+          type="button"
+          className="av-arrow"
+          onClick={() => load(addDays(fromDate, -WEEK_DAYS) < data.today ? data.today : addDays(fromDate, -WEEK_DAYS))}
+          disabled={!canGoBack || Boolean(busyKey) || isLoading}
+          aria-label="Previous week"
+        >
           <FiChevronLeft />
         </button>
         <span className="av-week-label">
           {formatDateLabel(fromDate, { withYear: false })} – {formatDateLabel(lastDate, { withYear: false })}
         </span>
-        <button type="button" className="av-arrow" onClick={() => load(addDays(fromDate, WEEK_DAYS))} disabled={!canGoForward || Boolean(busyKey)} aria-label="Next week">
+        <button
+          type="button"
+          className="av-arrow"
+          onClick={() => load(addDays(fromDate, WEEK_DAYS))}
+          disabled={!canGoForward || Boolean(busyKey) || isLoading}
+          aria-label="Next week"
+        >
           <FiChevronRight />
+        </button>
+        <button
+          type="button"
+          className="av-arrow"
+          onClick={() => load(fromDate)}
+          disabled={Boolean(busyKey) || isLoading}
+          title="Refresh availability"
+          aria-label="Refresh availability"
+          style={{ marginLeft: 8 }}
+        >
+          <FiRefreshCw className={isLoading ? 'icon-spin' : ''} />
         </button>
       </div>
 
@@ -169,11 +235,20 @@ export default function AvailabilityCalendar() {
               {day.isDayOff ? 'You are off this day. Customers cannot book it.' : 'Tap a time to switch it off or on.'}
             </p>
           </div>
-          {!dayIsPast && (
-            <button type="button" className={`btn-pro btn-sm ${day.isDayOff ? 'btn-orange' : 'btn-light'}`} onClick={() => toggleDay(day)} disabled={Boolean(busyKey)}>
-              {busyKey === day.date ? 'Saving…' : day.isDayOff ? 'Open this day' : 'Take the day off'}
-            </button>
-          )}
+          {!dayIsPast && (() => {
+            const hasConfirmedBookings = day.slots.some((s) => s.status === 'booked');
+            return (
+              <button
+                type="button"
+                className={`btn-pro btn-sm ${day.isDayOff ? 'btn-orange' : 'btn-light'}`}
+                onClick={() => toggleDay(day)}
+                disabled={Boolean(busyKey) || (!day.isDayOff && hasConfirmedBookings)}
+                title={!day.isDayOff && hasConfirmedBookings ? 'Cannot take day off: confirmed booking(s) scheduled' : undefined}
+              >
+                {busyKey === day.date ? 'Saving…' : day.isDayOff ? 'Open this day' : 'Take the day off'}
+              </button>
+            );
+          })()}
         </div>
 
         {!day.isDayOff &&
@@ -188,7 +263,14 @@ export default function AvailabilityCalendar() {
                 </div>
                 <div className="av-slots">
                   {slots.map((slot) => {
-                    const clickable = !busyKey && (slot.status === 'available' || slot.status === 'blocked' || (slot.status === 'booked' && slot.booking && !slot.outsideHours));
+                    const isBooked = slot.status === 'booked';
+                    const clickable = !busyKey && !isBooked && (
+                      slot.status === 'available' ||
+                      (slot.status === 'blocked' && slot.timeOffId && !day.isDayOff)
+                    );
+                    const slotTitle = isBooked
+                      ? `Confirmed booking: ${slot.booking?.fullName || 'Client'} (cannot be switched)`
+                      : slot.label;
                     return (
                       <button
                         key={slot.slotKey}
@@ -196,7 +278,7 @@ export default function AvailabilityCalendar() {
                         className={`av-slot ${slot.status}`}
                         disabled={!clickable}
                         onClick={() => toggleSlot(day, slot)}
-                        title={slot.label}
+                        title={slotTitle}
                       >
                         <span className="av-slot-time">{startOnly(slot)}</span>
                         <span className="av-slot-state">

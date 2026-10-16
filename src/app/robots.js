@@ -7,7 +7,7 @@ export default async function robots() {
 
   return {
     rules: seo.allowIndexing
-      ? { userAgent: '*', allow: '/', disallow: ['/admin', '/consultant', '/api', '/payment-status'] }
+      ? { userAgent: '*', allow: '/', disallow: ['/superadmin', '/admin', '/consultant', '/api', '/payment-status'] }
       : { userAgent: '*', disallow: '/' },
     sitemap: seo.allowIndexing && siteUrl ? `${siteUrl.replace(/\/+$/, '')}/sitemap.xml` : undefined,
   };

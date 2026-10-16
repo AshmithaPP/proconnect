@@ -1183,6 +1183,11 @@
 .av-slot.booked {
   background: #eef4fd;
   border-color: #c9dcf6;
+  cursor: not-allowed;
+}
+
+.av-slot.booked:hover {
+  border-color: #c9dcf6;
 }
 
 .av-slot.booked .av-slot-state {

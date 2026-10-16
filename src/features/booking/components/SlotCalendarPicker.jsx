@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ClockIcon, CalendarIcon, ChevronDownIcon } from '@/components/ui/Icons';
+import { FiClock, FiCalendar, FiChevronDown } from 'react-icons/fi';
 
 /**
  * Modern, clean, and compact Preferred Date & Time selector.
@@ -95,7 +95,7 @@ export default function SlotCalendarPicker({
           </label>
           <div className="select-wrap">
             <span className="field-icon">
-              <CalendarIcon />
+              <FiCalendar />
             </span>
             <select
               id="preferredDateSelect"
@@ -114,7 +114,7 @@ export default function SlotCalendarPicker({
               ))}
             </select>
             <span className="select-arrow">
-              <ChevronDownIcon />
+              <FiChevronDown />
             </span>
           </div>
         </div>
@@ -138,11 +138,11 @@ export default function SlotCalendarPicker({
             </button>
 
             <span className="field-icon">
-              <ClockIcon />
+              <FiClock />
             </span>
 
             <span className="select-arrow">
-              <ChevronDownIcon />
+              <FiChevronDown />
             </span>
 
             {/* Custom Popover Dropdown Menu */}
@@ -181,7 +181,7 @@ export default function SlotCalendarPicker({
                         >
                           <span className="slot-btn-main">
                             <span className="slot-icon-wrap">
-                              <ClockIcon className="slot-icon" />
+                              <FiClock className="slot-icon" />
                             </span>
                             <span className="slot-time">{slot.label}</span>
                           </span>

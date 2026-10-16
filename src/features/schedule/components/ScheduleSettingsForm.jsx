@@ -88,7 +88,7 @@ export default function ScheduleSettingsForm({ initialRules, businessHours, time
       </section>
 
       <div className="settings-actions" style={{ marginTop: 0 }}>
-        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting}>
+        <button type="submit" className="btn-pro btn-orange btn-sm" disabled={isSubmitting} suppressHydrationWarning>
           {isSubmitting ? 'Saving…' : 'Save'}
         </button>
         <FormStatus status={status} />
