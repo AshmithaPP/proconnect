@@ -38,9 +38,12 @@ CREATE TABLE IF NOT EXISTS schedule_time_off (
 
 -- 3. Bookings: consultation date + times, and the reschedule status
 ALTER TABLE consultation_bookings
-  ADD COLUMN consultation_date DATE NULL AFTER preferred_time_slot,
-  ADD COLUMN slot_start_time TIME NULL AFTER consultation_date,
-  ADD COLUMN slot_end_time TIME NULL AFTER slot_start_time,
+  ADD COLUMN consultation_date DATE NULL AFTER preferred_time_slot;
+ALTER TABLE consultation_bookings
+  ADD COLUMN slot_start_time TIME NULL AFTER consultation_date;
+ALTER TABLE consultation_bookings
+  ADD COLUMN slot_end_time TIME NULL AFTER slot_start_time;
+ALTER TABLE consultation_bookings
   MODIFY COLUMN booking_status ENUM('pending_payment', 'confirmed', 'reschedule_required', 'cancelled')
     NOT NULL DEFAULT 'pending_payment';
 
@@ -83,6 +86,8 @@ SET b.booking_status = 'reschedule_required';
 --    Two customers paying for the same slot at the same moment cannot both be confirmed.
 ALTER TABLE consultation_bookings
   ADD COLUMN confirmed_slot_key VARCHAR(32)
-    GENERATED ALWAYS AS (IF(booking_status = 'confirmed', CONCAT(consultation_date, ' ', slot_start_time), NULL)) STORED,
-  ADD UNIQUE KEY uq_confirmed_slot (confirmed_slot_key),
+    GENERATED ALWAYS AS (IF(booking_status = 'confirmed', CONCAT(consultation_date, ' ', slot_start_time), NULL)) VIRTUAL;
+ALTER TABLE consultation_bookings
+  ADD UNIQUE KEY uq_confirmed_slot (confirmed_slot_key);
+ALTER TABLE consultation_bookings
   ADD INDEX idx_booking_consultation_date (consultation_date, booking_status);

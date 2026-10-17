@@ -21,7 +21,12 @@ const dbName = process.env.DB_NAME || 'preconnect_db';
 async function runMigrations() {
   console.log(`Connecting to MySQL at ${dbHost}:${dbPort} as user "${dbUser}"...`);
 
-  // 1. Connect without database to ensure database exists
+  // 1. Connect without database to ensure database exists (for local MySQL)
+  const isCloudDb = process.env.DB_SSL === 'true' || (dbHost !== 'localhost' && dbHost !== '127.0.0.1');
+  const sslConfig = isCloudDb
+    ? { minVersion: 'TLSv1.2', rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' }
+    : undefined;
+
   let serverConn;
   try {
     serverConn = await mysql.createConnection({
@@ -29,12 +34,17 @@ async function runMigrations() {
       port: dbPort,
       user: dbUser,
       password: dbPassword,
+      ssl: sslConfig,
     });
     await serverConn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     console.log(`✓ Database "${dbName}" verified.`);
   } catch (err) {
-    console.error('Failed to verify/create database:', err.message);
-    process.exit(1);
+    if (isCloudDb) {
+      console.log(`ℹ Managed cloud database detected. Using database "${dbName}".`);
+    } else {
+      console.error('Failed to verify/create database:', err.message);
+      process.exit(1);
+    }
   } finally {
     if (serverConn) await serverConn.end();
   }
@@ -47,6 +57,7 @@ async function runMigrations() {
     password: dbPassword,
     database: dbName,
     multipleStatements: true,
+    ssl: sslConfig,
   });
 
   try {
