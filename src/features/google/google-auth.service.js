@@ -18,6 +18,7 @@ const SCOPES = [
 export async function getGoogleOAuthConfig() {
   const stored = await readStoredSetting(SETTING_KEY);
   const clientId = stored.customClientId || process.env.GOOGLE_CLIENT_ID || '';
+  const clientSecret = stored.customClientSecret || process.env.GOOGLE_CLIENT_SECRET || '';
   const appBase = process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')
     ? process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')
     : '';
