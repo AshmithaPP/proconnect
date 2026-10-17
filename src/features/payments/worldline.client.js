@@ -49,6 +49,9 @@ export function getWorldlineClient() {
   }
 
   const config = getWorldlineConfig();
+  if (!config.apiKeyId || !config.secretApiKey) {
+    throw new Error('Worldline credentials missing: Please check WORLDLINE_API_KEY_ID and WORLDLINE_SECRET_API_KEY in Vercel environment variables.');
+  }
 
   // The official host for Worldline Pre-Production / Sandbox
   const host = config.baseUrl.replace(/^https?:\/\//, '');
