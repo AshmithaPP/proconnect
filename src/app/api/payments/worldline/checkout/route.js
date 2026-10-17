@@ -115,7 +115,7 @@ export async function POST(request) {
     // No checkout session exists, so the customer cannot pay this booking: close it out
     await markBookingCancelled(booking.bookingId);
     return NextResponse.json(
-      { error: 'Could not connect to Worldline payment gateway. Please try again.' },
+      { error: error.message || 'Could not connect to Worldline payment gateway. Please try again.' },
       { status: 500, headers: NO_STORE }
     );
   }
