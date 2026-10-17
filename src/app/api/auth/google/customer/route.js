@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
-    const state = crypto.randomBytes(32).toString('hex');
+    const state = 'customer_' + crypto.randomBytes(32).toString('hex');
     const authUrl = await generateCustomerGoogleAuthUrl(state);
 
     const cookieStore = await cookies();
@@ -15,7 +15,7 @@ export async function GET(request) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      path: '/api/google/oauth/callback',
+      path: '/',
       maxAge: 10 * 60, // 10 minutes
     });
 
@@ -23,7 +23,7 @@ export async function GET(request) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      path: '/api/google/oauth/callback',
+      path: '/',
       maxAge: 10 * 60,
     });
 

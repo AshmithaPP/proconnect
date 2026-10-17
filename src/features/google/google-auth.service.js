@@ -18,8 +18,11 @@ const SCOPES = [
 export async function getGoogleOAuthConfig() {
   const stored = await readStoredSetting(SETTING_KEY);
   const clientId = stored.customClientId || process.env.GOOGLE_CLIENT_ID || '';
-  const clientSecret = stored.customClientSecret || process.env.GOOGLE_CLIENT_SECRET || '';
-  const redirectUri = stored.customRedirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/google/oauth/callback';
+  const appBase = process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')
+    ? process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')
+    : '';
+  const defaultRedirect = appBase ? `${appBase}/api/google/oauth/callback` : 'http://localhost:3000/api/google/oauth/callback';
+  const redirectUri = stored.customRedirectUri || process.env.GOOGLE_REDIRECT_URI || defaultRedirect;
 
   return {
     isConfigured: Boolean(clientId && clientSecret),

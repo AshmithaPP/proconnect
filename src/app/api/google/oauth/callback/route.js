@@ -13,17 +13,25 @@ export async function GET(request) {
   const cookieStore = await cookies();
   const savedState = cookieStore.get('google_oauth_state')?.value;
   const flow = cookieStore.get('google_oauth_flow')?.value;
-  const portal = cookieStore.get('google_oauth_portal')?.value || 'admin';
+  const portal = cookieStore.get('google_oauth_portal')?.value;
 
   // Clear CSRF & flow cookies
   cookieStore.delete('google_oauth_state');
   cookieStore.delete('google_oauth_flow');
   cookieStore.delete('google_oauth_portal');
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${url.protocol}//${url.host}`;
+  // Derive baseUrl from the incoming request's actual host so it NEVER accidentally redirects to localhost in live deployments
+  const host = request.headers.get('x-forwarded-host') || url.host;
+  const proto = request.headers.get('x-forwarded-proto') || (url.protocol.replace(':', '') || 'https');
+  const requestOrigin = `${proto}://${host}`;
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost'))
+    ? process.env.NEXT_PUBLIC_APP_URL
+    : requestOrigin;
 
   // Customer 1-Click Booking Sign-In Flow
-  if (flow === 'customer_signin') {
+  const isCustomerFlow = flow === 'customer_signin' || (state && state.startsWith('customer_'));
+
+  if (isCustomerFlow) {
     const returnTarget = new URL('/#book', baseUrl);
 
     if (error) {
@@ -31,7 +39,7 @@ export async function GET(request) {
       return NextResponse.redirect(returnTarget);
     }
 
-    if (!code || !state || state !== savedState) {
+    if (!code || !state || (savedState && state !== savedState)) {
       returnTarget.searchParams.set('google_error', 'invalid_state');
       return NextResponse.redirect(returnTarget);
     }
@@ -59,7 +67,11 @@ export async function GET(request) {
   }
 
   // Portal (Super Admin / Admin) Calendar Integration Flow
-  const redirectPath = portal === 'superadmin'
+  const resolvedPortal = (state && state.startsWith('portal_superadmin'))
+    ? 'superadmin'
+    : (portal || 'admin');
+
+  const redirectPath = resolvedPortal === 'superadmin'
     ? '/superadmin/dashboard/google-meet'
     : '/admin/dashboard/google-meet';
   const targetRedirect = new URL(redirectPath, baseUrl);
@@ -69,7 +81,7 @@ export async function GET(request) {
     return NextResponse.redirect(targetRedirect);
   }
 
-  if (!code || !state || state !== savedState) {
+  if (!code || !state || (savedState && state !== savedState)) {
     targetRedirect.searchParams.set('error', 'invalid_state');
     return NextResponse.redirect(targetRedirect);
   }

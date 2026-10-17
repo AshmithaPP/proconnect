@@ -15,7 +15,7 @@ export async function GET(request) {
   const portal = portalParam === 'superadmin' || auth.portalKey === 'superadmin' ? 'superadmin' : 'admin';
 
   try {
-    const state = crypto.randomBytes(32).toString('hex');
+    const state = 'portal_' + portal + '_' + crypto.randomBytes(32).toString('hex');
     const authUrl = await generateGoogleAuthUrl(state);
 
     const cookieStore = await cookies();
@@ -23,7 +23,7 @@ export async function GET(request) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      path: '/api/google/oauth/callback',
+      path: '/',
       maxAge: 10 * 60, // 10 minutes
     });
 
@@ -31,7 +31,7 @@ export async function GET(request) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      path: '/api/google/oauth/callback',
+      path: '/',
       maxAge: 10 * 60,
     });
 
