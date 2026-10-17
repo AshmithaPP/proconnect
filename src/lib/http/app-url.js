@@ -11,10 +11,16 @@
  */
 export function getAppBaseUrl(request) {
   const configured = process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.NODE_ENV === 'production' && configured) {
+  if (configured && !configured.includes('localhost')) {
     return configured.replace(/\/+$/, '');
   }
-  return request.nextUrl.origin;
+  const forwardedHost = request?.headers?.get('x-forwarded-host');
+  const rawHost = forwardedHost ? forwardedHost.split(',')[0].trim() : (request?.headers?.get('host') || '');
+  const proto = request?.headers?.get('x-forwarded-proto')?.split(',')[0]?.trim() || (request?.nextUrl?.protocol?.replace(':', '') || 'https');
+  if (rawHost) {
+    return `${proto}://${rawHost}`;
+  }
+  return request?.nextUrl?.origin || 'http://localhost:3000';
 }
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -24,9 +30,7 @@ const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
  *
  * Worldline's firewall rejects any request whose body contains "localhost" / "127.0.0.1"
  * (HTML 403 from the load balancer). In development we therefore swap a loopback host for
- * "localtest.me" — a public DNS name that resolves back to this machine — so the customer
- * still lands on the local dev server. Set PAYMENT_RETURN_BASE_URL (e.g. an ngrok URL) to
- * override. Production always uses getAppBaseUrl() (NEXT_PUBLIC_APP_URL).
+ * "localtest.me" — a public DNS name that resolves back to this machine.
  *
  * @param {import('next/server').NextRequest} request
  * @returns {string}
@@ -35,9 +39,14 @@ export function getPaymentReturnBaseUrl(request) {
   const override = process.env.PAYMENT_RETURN_BASE_URL;
   if (override) return override.replace(/\/+$/, '');
 
-  const base = new URL(getAppBaseUrl(request));
-  if (process.env.NODE_ENV !== 'production' && LOOPBACK_HOSTS.has(base.hostname)) {
-    base.hostname = 'localtest.me';
+  const appBase = getAppBaseUrl(request);
+  const base = new URL(appBase);
+  if (LOOPBACK_HOSTS.has(base.hostname)) {
+    if (process.env.NODE_ENV !== 'production') {
+      base.hostname = 'localtest.me';
+    } else {
+      return 'https://proconnect-black.vercel.app';
+    }
   }
   return base.origin;
 }

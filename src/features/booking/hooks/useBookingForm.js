@@ -196,7 +196,12 @@ export default function useBookingForm(onSuccess) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ bookingId: booking.bookingId }),
         });
-        const checkoutData = await checkoutRes.json();
+        let checkoutData;
+        try {
+          checkoutData = await checkoutRes.json();
+        } catch {
+          checkoutData = { error: `Payment gateway response error (${checkoutRes.status}). Please try again.` };
+        }
 
         if (!checkoutRes.ok || !checkoutData.redirectUrl) {
           setErrorMessage(checkoutData.error || 'Could not initialize Worldline payment. Please try again.');
@@ -218,8 +223,9 @@ export default function useBookingForm(onSuccess) {
       // 3. Payments disabled (PAYMENT_MODE=disabled): request stored, show confirmation of receipt
       setIsSubmitting(false);
       onSuccess({ ...formData, timeSlot: selectedSlotLabel, booking });
-    } catch {
-      setErrorMessage('Network connection error. Please try again.');
+    } catch (err) {
+      console.error('Booking submission error:', err);
+      setErrorMessage(err?.message || 'Network connection error. Please try again.');
       setIsSubmitting(false);
     }
   };

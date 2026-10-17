@@ -10,20 +10,22 @@ export function verifyRequestOrigin(request) {
   }
 
   const origin = request.headers.get('origin');
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const rawHost = forwardedHost ? forwardedHost.split(',')[0].trim() : (request.headers.get('host') || '');
+  const host = rawHost.split(':')[0].toLowerCase();
 
-  if (!host) {
-    return { valid: false, error: 'Missing Host header' };
-  }
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL ? new URL(process.env.NEXT_PUBLIC_APP_URL) : null;
+  const configuredHost = configuredUrl?.hostname?.toLowerCase();
 
   // If origin header is present, ensure it matches current host
   if (origin) {
     try {
       const originUrl = new URL(origin);
-      if (originUrl.host !== host) {
-        return { valid: false, error: 'Cross-origin request forbidden' };
+      const originHost = originUrl.hostname.toLowerCase();
+      if (originHost === host || (configuredHost && originHost === configuredHost)) {
+        return { valid: true };
       }
-      return { valid: true };
+      return { valid: false, error: 'Cross-origin request forbidden' };
     } catch {
       return { valid: false, error: 'Malformed Origin header' };
     }
@@ -34,10 +36,11 @@ export function verifyRequestOrigin(request) {
   if (referer) {
     try {
       const refererUrl = new URL(referer);
-      if (refererUrl.host !== host) {
-        return { valid: false, error: 'Cross-origin referer forbidden' };
+      const refererHost = refererUrl.hostname.toLowerCase();
+      if (refererHost === host || (configuredHost && refererHost === configuredHost)) {
+        return { valid: true };
       }
-      return { valid: true };
+      return { valid: false, error: 'Cross-origin referer forbidden' };
     } catch {
       return { valid: false, error: 'Malformed Referer header' };
     }
