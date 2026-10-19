@@ -45,7 +45,7 @@ export function getPaymentReturnBaseUrl(request) {
     if (process.env.NODE_ENV !== 'production') {
       base.hostname = 'localtest.me';
     } else {
-      return 'https://proconnect-black.vercel.app';
+      throw new Error('NEXT_PUBLIC_APP_URL must be set to the public https domain in production (payment return URL).');
     }
   }
   return base.origin;

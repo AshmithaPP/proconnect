@@ -4,9 +4,9 @@ import {
   SALES_CHALLENGE_OPTIONS,
 } from '@/features/booking/booking.options';
 import { parseSlotKey } from '@/features/schedule/slot-engine';
+import { normalizeIndianPhone, INDIAN_PHONE_ERROR } from '@/features/booking/phone';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_ALLOWED_CHARS = /^[+0-9\s().-]+$/;
 
 function cleanText(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
@@ -26,7 +26,7 @@ export function validateBookingInput(body) {
   const fullName = cleanText(body.fullName);
   const companyName = cleanText(body.companyName);
   const workEmail = cleanText(body.workEmail).toLowerCase();
-  const phoneNumber = cleanText(body.phoneNumber);
+  const phoneNumber = normalizeIndianPhone(cleanText(body.phoneNumber));
   const userRole = cleanText(body.role);
   const userRoleOther = cleanText(body.roleOther);
   const salesTeamSize = cleanText(body.teamSize);
@@ -49,9 +49,8 @@ export function validateBookingInput(body) {
     fieldErrors.workEmail = 'A valid work email is required';
   }
 
-  const phoneDigits = phoneNumber.replace(/\D/g, '');
-  if (!PHONE_ALLOWED_CHARS.test(phoneNumber) || phoneDigits.length < 7 || phoneDigits.length > 15) {
-    fieldErrors.phoneNumber = 'A valid phone number is required';
+  if (!phoneNumber) {
+    fieldErrors.phoneNumber = INDIAN_PHONE_ERROR;
   }
 
   if (!USER_ROLE_OPTIONS.includes(userRole)) {

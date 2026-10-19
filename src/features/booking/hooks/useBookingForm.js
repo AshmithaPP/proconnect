@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { normalizeIndianPhone, INDIAN_PHONE_ERROR } from '@/features/booking/phone';
 
 const initialForm = {
   fullName: '',
@@ -157,6 +158,11 @@ export default function useBookingForm(onSuccess) {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(workEmail.trim())) {
       setErrorMessage('Please enter a valid work email address.');
+      return;
+    }
+
+    if (!normalizeIndianPhone(phoneNumber)) {
+      setErrorMessage(`${INDIAN_PHONE_ERROR}.`);
       return;
     }
 

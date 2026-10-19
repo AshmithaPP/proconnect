@@ -210,6 +210,10 @@ export default function BookingForm({ onSuccess }) {
           value={formData.phoneNumber}
           onChange={handleChange}
           placeholder="+91 98765 43210"
+          inputMode="tel"
+          autoComplete="tel-national"
+          maxLength={16}
+          helperText="Indian mobile number, 10 digits"
         />
 
         <FormSelectField

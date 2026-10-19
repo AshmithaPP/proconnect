@@ -81,10 +81,10 @@ export async function POST(request) {
     );
   }
 
-  // 4. Construct absolute return URL where Worldline will redirect customer back
-  const returnUrl = `${getPaymentReturnBaseUrl(request)}/api/payments/worldline/return`;
-
   try {
+    // 4. Construct absolute return URL where Worldline will redirect customer back
+    const returnUrl = `${getPaymentReturnBaseUrl(request)}/api/payments/worldline/return`;
+
     // 5. Call Worldline Create Hosted Checkout API
     const session = await createHostedCheckoutSession({
       bookingId: booking.bookingId,

@@ -15,6 +15,9 @@ export default function FormTextField({
   readOnly = false,
   badge = null,
   helperText = null,
+  inputMode,
+  autoComplete,
+  maxLength,
 }) {
   return (
     <div>
@@ -35,6 +38,9 @@ export default function FormTextField({
           value={value}
           onChange={onChange}
           placeholder={placeholder}
+          inputMode={inputMode}
+          autoComplete={autoComplete}
+          maxLength={maxLength}
           required
           readOnly={readOnly}
           suppressHydrationWarning
